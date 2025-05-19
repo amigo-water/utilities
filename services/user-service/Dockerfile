@@ -1,41 +1,67 @@
+# Stage 1: Build stage
 FROM node:22-alpine AS builder
+
+# Install build dependencies
+RUN apk add --no-cache python3 make g++ && \
+    npm install -g typescript
 
 # Set working directory
 WORKDIR /app
 
-# Copy package.json files first (for better caching)
-COPY shared/package*.json ./shared/
+# Copy package files for dependency installation (shared first for better caching)
+COPY services/shared/package*.json ./services/shared/
 COPY services/user-service/package*.json ./services/user-service/
 
-# Install dependencies in shared and service directories
-WORKDIR /app/shared
-RUN npm ci
+# Install dependencies
+RUN cd services/shared && npm ci && npm cache clean --force
+RUN cd services/user-service && npm ci && npm cache clean --force
 
-WORKDIR /app/services/user-service
-RUN npm ci
+# Copy source code
+COPY services/shared/ ./services/shared/
+COPY services/user-service/tsconfig.json ./services/user-service/
+COPY services/user-service/src/ ./services/user-service/src/
 
-# Copy the rest of the application code
+# Build the user-service (this will also compile any shared dependencies due to tsconfig paths)
+RUN cd services/user-service && npm run build
+
+# Stage 2: Production stage
+FROM node:22-alpine AS runtime
+
+# Create non-root user for security
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nodejs -u 1001
+
+# Set working directory
 WORKDIR /app
-COPY shared ./shared
-COPY services/user-service ./services/user-service
 
-# Build the application
-WORKDIR /app/services/user-service
-RUN npm run build
+# Copy package files and install only production dependencies
+COPY services/shared/package*.json ./services/shared/
+COPY services/user-service/package*.json ./services/user-service/
 
-# ---------- Production Stage ----------
-FROM node:22-alpine
-WORKDIR /app
+RUN cd services/shared && npm ci --only=production && npm cache clean --force
+RUN cd services/user-service && npm ci --only=production && npm cache clean --force
 
-# Copy built app and dependencies from builder stage
-COPY --from=builder /app/shared ./shared
-COPY --from=builder /app/services/user-service ./services/user-service
+# Copy the built application
+COPY --from=builder --chown=nodejs:nodejs /app/dist/ ./dist/
 
-# Set working directory to service directory
-WORKDIR /app/services/user-service
+# Copy shared source code (since it's referenced via tsconfig paths)
+COPY --from=builder --chown=nodejs:nodejs /app/services/shared/src/ ./services/shared/src/
 
-# Only install production dependencies
-RUN npm ci --only=production
+# Copy environment file
+COPY services/user-service/.env.dev ./services/user-service/.env.dev
 
-EXPOSE 3005
-CMD [ "npm", "run", "dev" ]
+# Change ownership of the entire app directory
+RUN chown -R nodejs:nodejs /app
+
+# Switch to non-root user
+USER nodejs
+
+# Expose port 3011
+EXPOSE 3011
+
+# Add health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget --quiet --tries=1 --spider http://localhost:3011/health || exit 1
+
+# Start the application
+CMD ["node", "-r", "tsconfig-paths/register", "dist/services/user-service/index.js"]
