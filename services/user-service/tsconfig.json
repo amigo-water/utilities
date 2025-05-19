@@ -4,13 +4,13 @@
     "module": "commonjs",
     "outDir": "../../dist/services/user-service",
     "paths": {
-      "@shared/*": ["../../shared/src/*"]
+      "@shared/*": ["../shared/src/*"]
     },
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src/**/*","../../shared/src/**/*"],
+  "include": ["src/**/*","../shared/src/**/*"],
   "exclude": ["node_modules", "dist"]
 }
