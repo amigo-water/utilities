@@ -1,0 +1,17 @@
+{
+    "compilerOptions": {
+      "target": "es2020",
+      "module": "commonjs",
+      "outDir": "../../dist/services/policy-management-service",
+      "paths": {
+        "@shared/*": ["../shared/src/*"]
+      },
+      "strict": true,
+      "esModuleInterop": true,
+      "skipLibCheck": true,
+      "forceConsistentCasingInFileNames": true
+    },
+    "include": ["src/**/*","../shared/src/**/*"],
+    "exclude": ["node_modules", "dist"]
+  }
+  
