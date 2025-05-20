@@ -5,6 +5,7 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
+    "build": "tsc",
     "dev": "env-cmd -f .env.dev nodemon src/index.js",
     "prod": "env-cmd -f .env.prod nodemon src/index.js",
     "test": "jest"

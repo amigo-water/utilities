@@ -1,3 +1,4 @@
+# Run from root dir - docker build -f services/user-service/Dockerfile -t user-service:001 .
 # Stage 1: Build stage
 FROM node:22-alpine AS builder
 
