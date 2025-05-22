@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "dist/index.js",
   "scripts": {
-    "start": "node dist/index.js",
+"start": "env-cmd -f .env.dev node dist/index.js",
     "dev": "env-cmd -f .env.dev ts-node-dev --respawn --transpile-only src/index.ts",
     "prod": "env-cmd -f .env.prod ts-node-dev --respawn --transpile-only src/index.ts",
     "build": "tsc"
@@ -12,7 +12,8 @@
     "dotenv": "^16.0.3",
     "env-cmd": "^10.1.0",
     "express": "^4.18.2",
-    "pg": "^8.11.1",
+    "pg": "^8.16.0",
+    "pg-hstore": "^2.3.4",
     "sequelize": "^6.32.1"
   },
   "devDependencies": {

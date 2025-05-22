@@ -4,7 +4,7 @@
   "description": "Billing and payment processing service",
   "main": "dist/index.js",
   "scripts": {
-    "start": "node dist/index.js",
+    "start": "env-cmd -f .env.dev node dist/index.js",
     "dev": "env-cmd -f .env.dev nodemon src/index.ts",
     "prod": "env-cmd -f .env.prod nodemon src/index.ts",
     "build": "tsc",
