@@ -1,3 +1,5 @@
+# docker build -f services/workflow-approval-service/Dockerfile -t workflow-approval-service:002 .
+# docker run --network host --env-file .\services\workflow-approval-service\.env.dev workflow-approval-service:002
 # ---------- Stage 1: Builder ----------
 FROM node:22-alpine AS builder
 
@@ -17,6 +19,10 @@ RUN cd services/workflow-approval-service && npm ci && npm install tsconfig-path
 COPY services/shared ./services/shared
 COPY services/workflow-approval-service/tsconfig.json ./services/workflow-approval-service/
 COPY services/workflow-approval-service/src ./services/workflow-approval-service/src
+
+# Build
+WORKDIR /app/services/shared
+RUN npm run build
 
 # Build
 WORKDIR /app/services/workflow-approval-service
