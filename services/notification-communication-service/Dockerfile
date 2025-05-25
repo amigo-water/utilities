@@ -1,68 +1,56 @@
-# Run from root dir - docker build -f services/notification-communication-service/Dockerfile -t notification-communication-service:001 .
-# Stage 1: Build stage
+# docker build -f services/notification-communication-service/Dockerfile -t notification-communication-service:002 .
+# docker run --network host --env-file .\services\notification-communication-service\.env.dev notification-communication-service:002
+# ---------- Stage 1: Builder ----------
 FROM node:22-alpine AS builder
 
-# Install build dependencies
-RUN apk add --no-cache python3 make g++ && \
-    npm install -g typescript
+RUN apk add --no-cache python3 make g++ && npm install -g typescript
 
-# Set working directory
 WORKDIR /app
 
-# Copy package files for dependency installation (shared first for better caching)
+# Copy package files
 COPY services/shared/package*.json ./services/shared/
 COPY services/notification-communication-service/package*.json ./services/notification-communication-service/
 
 # Install dependencies
 RUN cd services/shared && npm ci && npm cache clean --force
-RUN cd services/notification-communication-service && npm ci && npm cache clean --force
+RUN cd services/notification-communication-service && npm ci && npm install tsconfig-paths && npm cache clean --force
 
-# Copy source code
-COPY services/shared/ ./services/shared/
+# Copy source files
+COPY services/shared ./services/shared
 COPY services/notification-communication-service/tsconfig.json ./services/notification-communication-service/
-COPY services/notification-communication-service/src/ ./services/notification-communication-service/src/
+COPY services/notification-communication-service/src ./services/notification-communication-service/src
 
-# Build the notification-communication-service (this will also compile any shared dependencies due to tsconfig paths)
-RUN cd services/notification-communication-service && npm run build
+# Build
+WORKDIR /app/services/shared
+RUN npm run build
 
-# Stage 2: Production stage
+# Build
+WORKDIR /app/services/notification-communication-service
+RUN npm run build
+
+# ---------- Stage 2: Runtime ----------
 FROM node:22-alpine AS runtime
 
-# Create non-root user for security
-RUN addgroup -g 1001 -S nodejs && \
-    adduser -S nodejs -u 1001
+RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001
 
-# Set working directory
-WORKDIR /app
+WORKDIR /app/services/notification-communication-service
 
-# Copy package files and install only production dependencies
-COPY services/shared/package*.json ./services/shared/
-COPY services/notification-communication-service/package*.json ./services/notification-communication-service/
+# Copy build output
+COPY --from=builder --chown=nodejs:nodejs /app/services/notification-communication-service/dist ./dist
+COPY --from=builder --chown=nodejs:nodejs /app/services/notification-communication-service/tsconfig.json ./tsconfig.json
 
-RUN cd services/shared && npm ci --only=production && npm cache clean --force
-RUN cd services/notification-communication-service && npm ci --only=production && npm cache clean --force
+# Copy shared code
+COPY --from=builder --chown=nodejs:nodejs /app/services/shared /app/services/shared
 
-# Copy the built application
-COPY --from=builder --chown=nodejs:nodejs /app/dist/ ./dist/
+# Copy package files and install runtime deps
+COPY services/notification-communication-service/package*.json ./
+RUN npm ci && npm install tsconfig-paths
 
-# Copy shared source code (since it's referenced via tsconfig paths)
-COPY --from=builder --chown=nodejs:nodejs /app/services/shared/src/ ./services/shared/src/
-
-# Copy environment file
-COPY services/notification-communication-service/.env.dev ./services/notification-communication-service/.env.dev
-
-# Change ownership of the entire app directory
-RUN chown -R nodejs:nodejs /app
-
-# Switch to non-root user
 USER nodejs
 
-# Expose port 3007
 EXPOSE 3007
 
-# Add health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD wget --quiet --tries=1 --spider http://localhost:3007/health || exit 1
 
-# Start the application
-CMD ["node", "-r", "tsconfig-paths/register", "dist/services/notification-communication-service/index.js"]
+CMD ["node", "-r", "tsconfig-paths/register", "dist/index.js"]
