@@ -28,9 +28,8 @@ jobs:
           sudo apt-get install docker-compose -y
 
       - name: Build and start all services
-        run: |
-          cd utilities/infra/
-          docker-compose -f docker-compose.yml up --build -d
+        run: |          
+          docker-compose -f infra/docker-compose.yml up --build -d
         timeout-minutes: 10
 
       - name: Wait for services to be ready
@@ -57,4 +56,4 @@ jobs:
       - name: Tear down stack
         if: always()
         run: |
-          docker-compose -f utilities/infra/docker-compose.yml down
+          docker-compose -f infra/docker-compose.yml down
