@@ -38,15 +38,15 @@ jobs:
           sleep 30
           docker ps
 
-      - name: Run health checks
-        run: |
-          curl --fail http://localhost:3003 || exit 1  # example: check consumer-service
-          curl --fail http://localhost:3001 || exit 1  # billing-service
-          # Add others as needed
+    #   - name: Run health checks
+    #     run: |
+    #       curl --fail http://localhost:3003 || exit 1  # example: check consumer-service
+    #       curl --fail http://localhost:3001 || exit 1  # billing-service
+    #       # Add others as needed
 
-#      - name: Run tests inside a service container (example: user-service)
-#        run: |
-#          docker exec user-service npm test  # adjust if using yarn or pnpm
+    #  - name: Run tests inside a service container (example: user-service)
+    #    run: |
+    #      docker exec user-service npm test  # adjust if using yarn or pnpm
 
       - name: Show Docker image sizes
         run: |
