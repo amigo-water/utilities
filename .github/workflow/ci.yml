@@ -18,6 +18,9 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
+      
+      - name: Show workspace directory contents
+        run: ls -R
 
       - name: Set up Docker Compose
         run: |
@@ -26,7 +29,8 @@ jobs:
 
       - name: Build and start all services
         run: |
-          docker-compose -f utilities/infra/docker-compose.yml up --build -d
+          cd utilities/infra/
+          docker-compose -f docker-compose.yml up --build -d
         timeout-minutes: 10
 
       - name: Wait for services to be ready
