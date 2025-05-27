@@ -1,23 +1,47 @@
+// src/index.ts
 import express from 'express';
-import dotenv from 'dotenv';
-import routes from './routes';
 import { sequelize } from './config/database';
-
-dotenv.config();
+import { kafkaConsumer } from './services/kafka.consumer';
 
 const app = express();
-app.use(express.json());
-app.use('/', routes);
+const port = process.env.PORT || 3007;
 
-const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
-
-sequelize.authenticate()
-  .then(() => {
+// Initialize database and start server
+const startServer = async () => {
+  try {
+    await sequelize.authenticate();
     console.log('Database connected!');
+    
+    // Sync database models
+    await sequelize.sync();
+    console.log('Database synced');
+    
+    // Start Kafka consumer
+    await kafkaConsumer.start();
+    
+    // Start the server
     app.listen(port, () => {
-      console.log('notification communication service running on port ' + port);
+      console.log(`Notification service running on port ${port}`);
     });
-  })
-  .catch((err: any) => {
-    console.error('Unable to connect to the database:', err);
-  });
+    
+  } catch (error) {
+    console.error('Failed to start server:', error);
+    process.exit(1);
+  }
+};
+
+// Handle shutdown
+process.on('SIGTERM', async () => {
+  console.log('Shutting down gracefully...');
+  await kafkaConsumer.stop();
+  process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+  console.log('Shutting down gracefully...');
+  await kafkaConsumer.stop();
+  process.exit(0);
+});
+
+// Start the application
+startServer();
