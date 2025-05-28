@@ -88,25 +88,85 @@ jobs:
         run: |
           cd infra
           
-          # Start infrastructure services first
+          # Start infrastructure services first with proper ordering
           echo "🚀 Starting infrastructure services..."
-          docker-compose -f docker-compose.yml up -d postgres zookeeper kafka
+          
+          # Start Zookeeper first
+          docker-compose -f docker-compose.yml up -d zookeeper
+          echo "⏳ Waiting for Zookeeper..."
+          sleep 15
+          
+          # Start Postgres
+          docker-compose -f docker-compose.yml up -d postgres
+          echo "⏳ Waiting for Postgres..."
+          sleep 10
+          
+          # Start Kafka after Zookeeper is ready
+          docker-compose -f docker-compose.yml up -d kafka
+          echo "⏳ Waiting for Kafka to start..."
+          sleep 20
           
           # Wait for infrastructure to be ready
           echo "⏳ Waiting for infrastructure services to be ready..."
-          sleep 30
           
-          # Check postgres health
-          until docker exec postgres pg_isready -U postgres; do
-            echo "Waiting for postgres..."
-            sleep 5
+          # Check postgres health with timeout
+          POSTGRES_READY=false
+          POSTGRES_WAIT_COUNT=0
+          MAX_POSTGRES_WAIT=12  # 1 minute total (12 * 5 seconds)
+          
+          while [ "$POSTGRES_READY" = false ] && [ $POSTGRES_WAIT_COUNT -lt $MAX_POSTGRES_WAIT ]; do
+            echo "Waiting for postgres... attempt $((POSTGRES_WAIT_COUNT + 1))/$MAX_POSTGRES_WAIT"
+            if docker exec postgres pg_isready -U postgres >/dev/null 2>&1; then
+              POSTGRES_READY=true
+              echo "✅ Postgres is ready!"
+            else
+              sleep 5
+              ((POSTGRES_WAIT_COUNT++))
+            fi
           done
           
-          # Check kafka health
-          until docker exec kafka kafka-broker-api-versions --bootstrap-server localhost:9092 >/dev/null 2>&1; do
-            echo "Waiting for kafka..."
-            sleep 5
+          if [ "$POSTGRES_READY" = false ]; then
+            echo "❌ Postgres failed to start"
+            docker logs postgres --tail 20
+            exit 1
+          fi
+          
+          # Check kafka health with timeout and better diagnostics
+          KAFKA_READY=false
+          KAFKA_WAIT_COUNT=0
+          MAX_KAFKA_WAIT=24  # 2 minutes total (24 * 5 seconds)
+          
+          while [ "$KAFKA_READY" = false ] && [ $KAFKA_WAIT_COUNT -lt $MAX_KAFKA_WAIT ]; do
+            echo "Waiting for kafka... attempt $((KAFKA_WAIT_COUNT + 1))/$MAX_KAFKA_WAIT"
+            
+            # Check if kafka container is running
+            if ! docker ps | grep -q kafka; then
+              echo "❌ Kafka container is not running!"
+              docker ps
+              docker logs kafka --tail 20
+              exit 1
+            fi
+            
+            # Try multiple kafka health check methods
+            if docker exec kafka kafka-topics --bootstrap-server localhost:9092 --list >/dev/null 2>&1 || \
+               docker exec kafka kafka-broker-api-versions --bootstrap-server localhost:9092 >/dev/null 2>&1 || \
+               docker exec kafka nc -z localhost 9092 >/dev/null 2>&1; then
+              KAFKA_READY=true
+              echo "✅ Kafka is ready!"
+            else
+              sleep 5
+              ((KAFKA_WAIT_COUNT++))
+            fi
           done
+          
+          if [ "$KAFKA_READY" = false ]; then
+            echo "❌ Kafka failed to start within timeout period"
+            echo "Kafka logs:"
+            docker logs kafka --tail 50
+            echo "Kafka container status:"
+            docker ps --filter name=kafka
+            exit 1
+          fi
           
           echo "✅ Infrastructure services are ready"
           
