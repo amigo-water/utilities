@@ -3,7 +3,7 @@ import { Kafka, ConsumerConfig } from 'kafkajs';
 
 const kafka = new Kafka({
   clientId: 'notification-communication-service',
-  brokers: process.env.KAFKA_BROKERS?.split(',') || ['localhost:9092'],
+  brokers: process.env.KAFKA_BROKERS?.split(',') || ['kafka:9092'],
 });
 
 export const consumerConfig: ConsumerConfig = {
