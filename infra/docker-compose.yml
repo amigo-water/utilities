@@ -1,202 +1,6 @@
 version: '3.8'
 
 services:
-
-  analytics-reporting-service:
-    build:
-      context: ../
-      dockerfile: services/analytics-reporting-service/Dockerfile
-    container_name: analytics-reporting-service
-    env_file:
-      - ../services/analytics-reporting-service/.env.dev
-    depends_on:
-      - postgres
-      - kafka
-    ports:
-      - "3000:3000"
-    networks:
-      - app-network
-
-  billing-service:
-    build:
-      context: ../
-      dockerfile: services/billing-service/Dockerfile
-    container_name: billing-service
-    env_file:
-      - ../services/billing-service/.env.dev
-    depends_on:
-      - postgres
-      - kafka
-    ports:
-      - "3001:3001"
-    networks:
-      - app-network
-
-  collection-management-service:
-    build:
-      context: ../
-      dockerfile: services/collection-management-service/Dockerfile
-    container_name: collection-management-service
-    env_file:
-      - ../services/collection-management-service/.env.dev
-    depends_on:
-      - postgres
-      - kafka
-    ports:
-      - "3002:3002"
-    networks:
-      - app-network
-
-  consumer-service:
-    build:
-      context: ../
-      dockerfile: services/consumer-service/Dockerfile
-    container_name: consumer-service
-    env_file:
-      - ../services/consumer-service/.env.dev
-    depends_on:
-      - postgres
-      - kafka
-    ports:
-      - "3003:3003"
-    networks:
-      - app-network
-
-  customer-support-service:
-    build:
-      context: ../
-      dockerfile: services/customer-support-service/Dockerfile
-    container_name: customer-support-service
-    env_file:
-      - ../services/customer-support-service/.env.dev
-    depends_on:
-      - postgres
-      - kafka
-    ports:
-      - "3004:3004"
-    networks:
-      - app-network
-
-  gis-location-management-service:
-    build:
-      context: ../
-      dockerfile: services/gis-location-management-service/Dockerfile
-    container_name: gis-location-management-service
-    env_file:
-      - ../services/gis-location-management-service/.env.dev
-    depends_on:
-      - postgres
-      - kafka
-    ports:
-      - "3005:3005"
-    networks:
-      - app-network
-
-  meter-management-inventory-service:
-    build:
-      context: ../
-      dockerfile: services/meter-management-inventory-service/Dockerfile
-    container_name: meter-management-inventory-service
-    env_file:
-      - ../services/meter-management-inventory-service/.env.dev
-    depends_on:
-      - postgres
-      - kafka
-    ports:
-      - "3006:3006"
-    networks:
-      - app-network
-
-  notification-communication-service:
-    build:
-      context: ../
-      dockerfile: services/notification-communication-service/Dockerfile
-    container_name: notification-communication-service
-    env_file:
-      - ../services/notification-communication-service/.env.dev
-    depends_on:
-      - postgres
-      - kafka
-    ports:
-      - "3007:3007"
-    networks:
-      - app-network
-
-  policy-management-service:
-    build:
-      context: ../
-      dockerfile: services/policy-management-service/Dockerfile
-    container_name: policy-management-service
-    env_file:
-      - ../services/policy-management-service/.env.dev
-    depends_on:
-      - postgres
-      - kafka
-    ports:
-      - "3008:3008"
-    networks:
-      - app-network
-
-  third-party-integration-gateway-service:
-    build:
-      context: ../
-      dockerfile: services/third-party-integration-gateway-service/Dockerfile
-    container_name: third-party-integration-gateway-service
-    env_file:
-      - ../services/third-party-integration-gateway-service/.env.dev
-    depends_on:
-      - postgres
-      - kafka
-    ports:
-      - "3009:3009"
-    networks:
-      - app-network
-
-  user-identity-access-management-service:
-    build:
-      context: ../
-      dockerfile: services/user-identity-access-management-service/Dockerfile
-    container_name: user-identity-access-management-service
-    env_file:
-      - ../services/user-identity-access-management-service/.env.dev
-    depends_on:
-      - postgres
-      - kafka
-    ports:
-      - "3010:3010"
-    networks:
-      - app-network
-
-  user-service:
-    build:
-      context: ../
-      dockerfile: services/user-service/Dockerfile
-    container_name: user-service
-    env_file:
-      - ../services/user-service/.env.dev
-    depends_on:
-      - postgres
-      - kafka
-    ports:
-      - "3011:3011"
-    networks:
-      - app-network
-
-  workflow-approval-service:
-    build:
-      context: ../
-      dockerfile: services/workflow-approval-service/Dockerfile
-    container_name: workflow-approval-service
-    env_file:
-      - ../services/workflow-approval-service/.env.dev
-    depends_on:
-      - postgres
-      - kafka
-    ports:
-      - "3012:3012"
-    networks:
-      - app-network
-
   postgres:
     image: postgres:17
     container_name: postgres
@@ -211,7 +15,13 @@ services:
       - "5432:5432"
     networks:
       - app-network
-
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+      
   zookeeper:
     image: confluentinc/cp-zookeeper:7.4.0
     container_name: zookeeper
@@ -225,6 +35,12 @@ services:
 
   kafka:
     image: confluentinc/cp-kafka:7.4.0
+    healthcheck:
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s  # Give Kafka more time to start
     container_name: kafka
     depends_on:
       - zookeeper
@@ -238,9 +54,230 @@ services:
     networks:
       - app-network
 
+  analytics-reporting-service:
+    build:
+      context: ../
+      dockerfile: services/analytics-reporting-service/Dockerfile
+    container_name: analytics-reporting-service
+    env_file:
+      - ../services/analytics-reporting-service/.env.dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    networks:
+      - app-network
+
+  billing-service:
+    build:
+      context: ../
+      dockerfile: services/billing-service/Dockerfile
+    container_name: billing-service
+    env_file:
+      - ../services/billing-service/.env.dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    ports:
+      - "3001:3001"
+    networks:
+      - app-network
+
+  collection-management-service:
+    build:
+      context: ../
+      dockerfile: services/collection-management-service/Dockerfile
+    container_name: collection-management-service
+    env_file:
+      - ../services/collection-management-service/.env.dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    ports:
+      - "3002:3002"
+    networks:
+      - app-network
+
+  consumer-service:
+    build:
+      context: ../
+      dockerfile: services/consumer-service/Dockerfile
+    container_name: consumer-service
+    env_file:
+      - ../services/consumer-service/.env.dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    ports:
+      - "3003:3003"
+    networks:
+      - app-network
+
+  customer-support-service:
+    build:
+      context: ../
+      dockerfile: services/customer-support-service/Dockerfile
+    container_name: customer-support-service
+    env_file:
+      - ../services/customer-support-service/.env.dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    ports:
+      - "3004:3004"
+    networks:
+      - app-network
+
+  gis-location-management-service:
+    build:
+      context: ../
+      dockerfile: services/gis-location-management-service/Dockerfile
+    container_name: gis-location-management-service
+    env_file:
+      - ../services/gis-location-management-service/.env.dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    ports:
+      - "3005:3005"
+    networks:
+      - app-network
+
+  meter-management-inventory-service:
+    build:
+      context: ../
+      dockerfile: services/meter-management-inventory-service/Dockerfile
+    container_name: meter-management-inventory-service
+    env_file:
+      - ../services/meter-management-inventory-service/.env.dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    ports:
+      - "3006:3006"
+    networks:
+      - app-network
+
+  notification-communication-service:
+    build:
+      context: ../
+      dockerfile: services/notification-communication-service/Dockerfile
+    container_name: notification-communication-service
+    env_file:
+      - ../services/notification-communication-service/.env.dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    ports:
+      - "3007:3007"
+    networks:
+      - app-network
+
+  policy-management-service:
+    build:
+      context: ../
+      dockerfile: services/policy-management-service/Dockerfile
+    container_name: policy-management-service
+    env_file:
+      - ../services/policy-management-service/.env.dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    ports:
+      - "3008:3008"
+    networks:
+      - app-network
+
+  third-party-integration-gateway-service:
+    build:
+      context: ../
+      dockerfile: services/third-party-integration-gateway-service/Dockerfile
+    container_name: third-party-integration-gateway-service
+    env_file:
+      - ../services/third-party-integration-gateway-service/.env.dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    ports:
+      - "3009:3009"
+    networks:
+      - app-network
+
+  user-identity-access-management-service:
+    build:
+      context: ../
+      dockerfile: services/user-identity-access-management-service/Dockerfile
+    container_name: user-identity-access-management-service
+    env_file:
+      - ../services/user-identity-access-management-service/.env.dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    ports:
+      - "3010:3010"
+    networks:
+      - app-network
+
+  user-service:
+    build:
+      context: ../
+      dockerfile: services/user-service/Dockerfile
+    container_name: user-service
+    env_file:
+      - ../services/user-service/.env.dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    ports:
+      - "3011:3011"
+    networks:
+      - app-network
+
+  workflow-approval-service:
+    build:
+      context: ../
+      dockerfile: services/workflow-approval-service/Dockerfile
+    container_name: workflow-approval-service
+    env_file:
+      - ../services/workflow-approval-service/.env.dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    ports:
+      - "3012:3012"
+    networks:
+      - app-network
+
+
 volumes:
   postgres-data:
-
 
 networks:
   app-network:
