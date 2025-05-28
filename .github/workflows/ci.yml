@@ -13,7 +13,7 @@ env:
 
 jobs:
   changes:
-    runs-on: self-hosted  # Using your private runner
+    runs-on: ubuntu-latest  # Using your private runner
     outputs:
       services: ${{ steps.changes.outputs.services }}
     steps:
@@ -51,7 +51,7 @@ jobs:
 
   build-and-push:
     needs: changes
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         service: [
@@ -131,7 +131,7 @@ jobs:
 
   security-scan:
     needs: [changes, build-and-push]
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     if: needs.changes.outputs.services != ''
     strategy:
       matrix:
@@ -177,7 +177,7 @@ jobs:
 
   notify-success:
     needs: [build-and-push, security-scan]
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     if: success()
     steps:
       - name: Notify success

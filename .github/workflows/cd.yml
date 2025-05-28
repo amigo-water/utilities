@@ -28,7 +28,7 @@ env:
 jobs:
   deploy:
     if: github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch'
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     # ADD OUTPUTS TO THE JOB
     outputs:
       environment: ${{ steps.vars.outputs.environment }}
@@ -281,7 +281,7 @@ jobs:
 
   notify:
     needs: deploy
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     if: always()
     steps:
       - name: Notify deployment status
