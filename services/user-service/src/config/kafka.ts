@@ -1,16 +1,17 @@
 // src/config/kafka.ts
-import { Kafka } from 'kafkajs';
+import { Kafka, Partitioners } from 'kafkajs';
 
 export const kafka = new Kafka({
   clientId: process.env.SERVICE_NAME || 'user-service',
-  brokers: [process.env.KAFKA_BROKER || 'localhost:9092'],
+  brokers: [process.env.KAFKA_BROKERS || 'kafka:9092'],
   retry: {
     retries: 5,
     initialRetryTime: 300,
     maxRetryTime: 15000,
   },
-//   logLevel: process.env.NODE_ENV === 'development' ? 'debug' : 'error',
 });
 
-export const producer = kafka.producer();
-export const consumer = kafka.consumer({ groupId: process.env.SERVICE_NAME || 'user-service-consumer' });
+export const producer = kafka.producer({
+  createPartitioner: Partitioners.LegacyPartitioner // Use the legacy partitioner for backward compatibility
+});
+export const consumer = kafka.consumer({ groupId: process.env.SERVICE_NAME || 'user-service-group' });
