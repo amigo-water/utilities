@@ -67,6 +67,7 @@ jobs:
           # Kafka
           KAFKA_BOOTSTRAP_SERVERS=kafka:9092
           ZOOKEEPER_CONNECT=zookeeper:2181
+          KAFKA_HEAP_OPTS=-Xmx512m -Xms512m
           
           # Application Environment
           NODE_ENV=${{ steps.vars.outputs.environment }}
