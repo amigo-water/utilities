@@ -1,0 +1,229 @@
+# .github/workflows/cd.yml
+name: CD - Deploy to Environment
+
+on:
+  workflow_run:
+    workflows: ["CI - Build and Push Images"]
+    branches: [main]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+      image_tag:
+        description: 'Image tag to deploy (default: latest commit sha)'
+        required: false
+        type: string
+
+env:
+  REGISTRY: docker.io
+  IMAGE_TAG: ${{ github.event.workflow_run.head_sha || github.event.inputs.image_tag || github.sha }}
+
+jobs:
+  deploy:
+    if: github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch'
+    runs-on: self-hosted
+    environment: 
+      name: ${{ github.event.inputs.environment || 'staging' }}
+      url: ${{ steps.deploy.outputs.url }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set deployment variables
+        id: vars
+        run: |
+          ENV="${{ github.event.inputs.environment || 'staging' }}"
+          TAG="${{ env.IMAGE_TAG }}"
+          echo "environment=${ENV}" >> $GITHUB_OUTPUT
+          echo "image_tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "compose_file=infra/docker-compose.${ENV}.yml" >> $GITHUB_OUTPUT
+
+      - name: Create environment file
+        run: |
+          cd infra
+          cat > .env << EOF
+          ENVIRONMENT=${{ steps.vars.outputs.environment }}
+          IMAGE_TAG=${{ steps.vars.outputs.image_tag }}
+          REGISTRY=${{ env.REGISTRY }}
+          REPO_OWNER=${{ github.repository_owner }}
+          
+          # Database
+          POSTGRES_USER=postgres
+          POSTGRES_PASSWORD=root
+          POSTGRES_DB=utility_services
+          
+          # Kafka
+          KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+          ZOOKEEPER_CONNECT=zookeeper:2181
+          
+          # Application Environment
+          NODE_ENV=${{ steps.vars.outputs.environment }}
+          EOF
+
+      - name: Stop existing containers
+        run: |
+          cd infra
+          docker-compose -f docker-compose.yml down --remove-orphans || true
+        continue-on-error: true
+
+      - name: Pull latest images
+        run: |
+          cd infra
+          docker-compose -f docker-compose.yml pull || echo "Some images might be built locally, continuing..."
+
+      - name: Deploy services
+        id: deploy
+        run: |
+          cd infra
+          
+          # Start infrastructure services first
+          echo "🚀 Starting infrastructure services..."
+          docker-compose -f docker-compose.yml up -d postgres zookeeper kafka
+          
+          # Wait for infrastructure to be ready
+          echo "⏳ Waiting for infrastructure services to be ready..."
+          sleep 30
+          
+          # Check postgres health
+          until docker exec postgres pg_isready -U postgres; do
+            echo "Waiting for postgres..."
+            sleep 5
+          done
+          
+          # Check kafka health
+          until docker exec kafka kafka-broker-api-versions --bootstrap-server localhost:9092 >/dev/null 2>&1; do
+            echo "Waiting for kafka..."
+            sleep 5
+          done
+          
+          echo "✅ Infrastructure services are ready"
+          
+          # Start all microservices
+          echo "🚀 Starting microservices..."
+          docker-compose -f docker-compose.yml up -d
+          
+          # Wait for services to be healthy
+          echo "⏳ Waiting for services to be healthy..."
+          sleep 60
+          
+          # Health check
+          HEALTHY_COUNT=0
+          TOTAL_SERVICES=13
+          
+          for service in analytics-reporting-service billing-service collection-management-service consumer-service customer-support-service gis-location-management-service meter-management-inventory-service notification-communication-service policy-management-service third-party-integration-gateway-service user-identity-access-management-service user-service workflow-approval-service; do
+            if docker ps --filter "name=${service}" --filter "status=running" | grep -q "${service}"; then
+              echo "✅ ${service} is running"
+              ((HEALTHY_COUNT++))
+            else
+              echo "❌ ${service} is not running"
+              docker logs ${service} --tail 50 || true
+            fi
+          done
+          
+          echo "📊 Services Status: ${HEALTHY_COUNT}/${TOTAL_SERVICES} healthy"
+          
+          if [ ${HEALTHY_COUNT} -lt $((TOTAL_SERVICES * 80 / 100)) ]; then
+            echo "❌ Less than 80% of services are healthy. Deployment failed."
+            exit 1
+          fi
+          
+          # Cleanup old images
+          docker image prune -f
+          
+          # Set output URL
+          if [ "${{ steps.vars.outputs.environment }}" == "production" ]; then
+            echo "url=https://api.utility-services.com" >> $GITHUB_OUTPUT
+          else
+            echo "url=https://staging-api.utility-services.com" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run smoke tests
+        run: |
+          echo "🧪 Running smoke tests..."
+          sleep 30
+          
+          # Test each service endpoint
+          FAILED_TESTS=0
+          
+          services=(
+            "analytics-reporting-service:3000"
+            "billing-service:3001"
+            "collection-management-service:3002"
+            "consumer-service:3003"
+            "customer-support-service:3004"
+            "gis-location-management-service:3005"
+            "meter-management-inventory-service:3006"
+            "notification-communication-service:3007"
+            "policy-management-service:3008"
+            "third-party-integration-gateway-service:3009"
+            "user-identity-access-management-service:3010"
+            "user-service:3011"
+            "workflow-approval-service:3012"
+          )
+          
+          for service_port in "${services[@]}"; do
+            service_name=$(echo $service_port | cut -d: -f1)
+            port=$(echo $service_port | cut -d: -f2)
+            
+            echo "Testing ${service_name} on port ${port}..."
+            
+            # Basic connectivity test
+            if curl -f -s --max-time 10 "http://localhost:${port}/health" >/dev/null 2>&1 || \
+               curl -f -s --max-time 10 "http://localhost:${port}/" >/dev/null 2>&1 || \
+               nc -z localhost ${port}; then
+              echo "✅ ${service_name} is accessible"
+            else
+              echo "❌ ${service_name} failed health check"
+              ((FAILED_TESTS++))
+            fi
+          done
+          
+          echo "📊 Smoke Tests: $((13 - FAILED_TESTS))/13 passed"
+          
+          if [ ${FAILED_TESTS} -gt 3 ]; then
+            echo "❌ Too many services failed smoke tests"
+            exit 1
+          fi
+
+      - name: Display deployment summary
+        if: success()
+        run: |
+          echo "🎉 Deployment Summary"
+          echo "===================="
+          echo "Environment: ${{ steps.vars.outputs.environment }}"
+          echo "Image Tag: ${{ steps.vars.outputs.image_tag }}"
+          echo "Deployment URL: ${{ steps.deploy.outputs.url }}"
+          echo ""
+          echo "📊 Service Status:"
+          cd infra
+          docker-compose ps
+
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          echo "🔄 Rolling back deployment..."
+          cd infra
+          docker-compose -f docker-compose.yml down
+          echo "❌ Deployment failed and rolled back"
+
+  notify:
+    needs: deploy
+    runs-on: self-hosted
+    if: always()
+    steps:
+      - name: Notify deployment status
+        run: |
+          if [ "${{ needs.deploy.result }}" == "success" ]; then
+            echo "✅ Deployment to ${{ needs.deploy.outputs.environment || 'staging' }} completed successfully!"
+            echo "🔗 URL: ${{ needs.deploy.outputs.url }}"
+          else
+            echo "❌ Deployment to ${{ needs.deploy.outputs.environment || 'staging' }} failed!"
+          fi

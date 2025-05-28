@@ -3,7 +3,7 @@ name: CI - Build and Push Images
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main ]
   pull_request:
     branches: [ main ]
 
