@@ -6,14 +6,15 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:  # Allow manual triggering
 
 env:
-  REGISTRY: docker.io  # Change to your preferred registry
+  REGISTRY: docker.io
   IMAGE_TAG: ${{ github.sha }}
 
 jobs:
   changes:
-    runs-on: self-hosted  # Using your private runner
+    runs-on: self-hosted
     outputs:
       analytics-reporting-service: ${{ steps.changes.outputs.analytics-reporting-service }}
       billing-service: ${{ steps.changes.outputs.billing-service }}
@@ -29,8 +30,11 @@ jobs:
       user-service: ${{ steps.changes.outputs.user-service }}
       workflow-approval-service: ${{ steps.changes.outputs.workflow-approval-service }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v2
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Detect changes
+        uses: dorny/paths-filter@v2
         id: changes
         with:
           filters: |
@@ -65,6 +69,7 @@ jobs:
     needs: changes
     runs-on: self-hosted
     strategy:
+      fail-fast: false
       matrix:
         service: [
           analytics-reporting-service,
@@ -88,10 +93,21 @@ jobs:
       - name: Check if service changed
         id: check-changes
         run: |
-          if [[ "${{ needs.changes.outputs.services }}" == *"${{ matrix.service }}"* ]] || [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          SERVICE_OUTPUT="${{ matrix.service }}"
+          SERVICE_CHANGED=$(echo '${{ toJson(needs.changes.outputs) }}' | jq -r --arg service "$SERVICE_OUTPUT" '.[$service]')
+          
+          # Validate the result
+          if [[ "$SERVICE_CHANGED" == "null" ]] || [[ -z "$SERVICE_CHANGED" ]]; then
+            echo "⚠️ Warning: Could not determine change status for $SERVICE_OUTPUT"
+            SERVICE_CHANGED="false"
+          fi
+          
+          if [[ "$SERVICE_CHANGED" == "true" ]] || [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             echo "changed=true" >> $GITHUB_OUTPUT
+            echo "🔄 Building ${{ matrix.service }} (changed: $SERVICE_CHANGED)"
           else
             echo "changed=false" >> $GITHUB_OUTPUT
+            echo "⏭️ Skipping ${{ matrix.service }} (no changes)"
           fi
 
       - name: Set up Docker Buildx
@@ -100,22 +116,20 @@ jobs:
 
       - name: Login to Docker Hub
         if: steps.check-changes.outputs.changed == 'true'
-        env:
-          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
-          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
-        run: echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Verify Docker login
         if: steps.check-changes.outputs.changed == 'true'
         run: docker info
-
 
       - name: Extract metadata
         if: steps.check-changes.outputs.changed == 'true'
         id: meta
         uses: docker/metadata-action@v5
         with:
-          # images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.service }}
           images: docker.io/ashritha07/${{ matrix.service }}
           tags: |
             type=ref,event=branch
@@ -137,15 +151,26 @@ jobs:
           cache-to: type=gha,mode=max
           platforms: linux/amd64
 
-      - name: Image digest
+      - name: Build Summary
         if: steps.check-changes.outputs.changed == 'true'
-        run: echo ${{ steps.build.outputs.digest }}
+        run: |
+          echo "## 🐳 Built ${{ matrix.service }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image:** docker.io/ashritha07/${{ matrix.service }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tags:** ${{ steps.meta.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Digest:** ${{ steps.build.outputs.digest }}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Debug information
+        run: |
+          echo "Service: ${{ matrix.service }}"
+          echo "All outputs: ${{ toJson(needs.changes.outputs) }}"
+          SERVICE_CHANGED=$(echo '${{ toJson(needs.changes.outputs) }}' | jq -r --arg service "${{ matrix.service }}" '.[$service]')
+          echo "Service changed: $SERVICE_CHANGED"
 
   security-scan:
     needs: [changes, build-and-push]
     runs-on: self-hosted
-    if: needs.changes.outputs.services != ''
     strategy:
+      fail-fast: false
       matrix:
         service: [
           analytics-reporting-service,
@@ -166,42 +191,32 @@ jobs:
       - name: Check if service changed
         id: check-changes
         run: |
-          if [[ "${{ needs.changes.outputs.services }}" == *"${{ matrix.service }}"* ]]; then
+          SERVICE_CHANGED=$(echo '${{ toJson(needs.changes.outputs) }}' | jq -r --arg service "${{ matrix.service }}" '.[$service]')
+          
+          if [[ "$SERVICE_CHANGED" == "true" ]] || [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             echo "changed=true" >> $GITHUB_OUTPUT
+            echo "🔍 Scanning ${{ matrix.service }}"
           else
             echo "changed=false" >> $GITHUB_OUTPUT
+            echo "⏭️ Skipping security scan for ${{ matrix.service }}"
           fi
 
       - name: Run Trivy vulnerability scanner
-        if: |
-          needs.changes.outputs.analytics-reporting-service == 'true' ||
-          needs.changes.outputs.billing-service == 'true' ||
-          needs.changes.outputs.collection-management-service == 'true' ||
-          needs.changes.outputs.consumer-service == 'true' ||
-          needs.changes.outputs.customer-support-service == 'true' ||
-          needs.changes.outputs.gis-location-management-service == 'true' ||
-          needs.changes.outputs.meter-management-inventory-service == 'true' ||
-          needs.changes.outputs.notification-communication-service == 'true' ||
-          needs.changes.outputs.policy-management-service == 'true' ||
-          needs.changes.outputs.third-party-integration-gateway-service == 'true' ||
-          needs.changes.outputs.user-identity-access-management-service == 'true' ||
-          needs.changes.outputs.user-service == 'true' ||
-          needs.changes.outputs.workflow-approval-service == 'true'
+        if: steps.check-changes.outputs.changed == 'true'
         uses: aquasecurity/trivy-action@master
         with:
-          # image-ref: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.service }}:${{ github.sha }}
           image-ref: docker.io/ashritha07/${{ matrix.service }}:${{ github.sha }}
           format: 'sarif'
           output: 'trivy-results-${{ matrix.service }}.sarif'
 
       - name: Upload Trivy scan results
         if: steps.check-changes.outputs.changed == 'true'
-        uses: github/codeql-action/upload-sarif@v2
+        uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'trivy-results-${{ matrix.service }}.sarif'
 
   notify-success:
-    needs: [build-and-push, security-scan]
+    needs: [build-and-push]
     runs-on: self-hosted
     if: success()
     steps:
@@ -209,3 +224,5 @@ jobs:
         run: |
           echo "✅ CI Pipeline completed successfully"
           echo "🚀 Images built and pushed with tag: ${{ env.IMAGE_TAG }}"
+          echo "## 🎉 CI Pipeline Success" >> $GITHUB_STEP_SUMMARY
+          echo "Successfully completed build and push for changed services" >> $GITHUB_STEP_SUMMARY

@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:17
@@ -56,12 +54,12 @@ services:
       - app-network
 
   analytics-reporting-service:
-    build:
-      context: ../
-      dockerfile: services/analytics-reporting-service/Dockerfile
+    image: ashritha07/analytics-reporting-service:${IMAGE_TAG:-latest}
     container_name: analytics-reporting-service
-    env_file:
-      - ../services/analytics-reporting-service/.env.dev
+    environment:
+      PORT: 3000
+      DATABASE_URL: postgres://postgres:root@postgres:5432/analytics-reporting
+      NODE_ENV: development
     depends_on:
       postgres:
         condition: service_healthy
@@ -73,12 +71,25 @@ services:
       - app-network
 
   billing-service:
-    build:
-      context: ../
-      dockerfile: services/billing-service/Dockerfile
+    image: ashritha07/billing-service:${IMAGE_TAG:-latest}
     container_name: billing-service
-    env_file:
-      - ../services/billing-service/.env.dev
+    environment:
+      PORT: 3001
+      NODE_ENV: development
+      SERVICE_NAME: billing-service
+      API_PREFIX: /api/v1/billing
+
+      DATABASE_URL: postgres://postgres:root@postgres:5432/Billing
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: root
+      DB_NAME: Billing
+
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_GROUP_ID: billing-service-group
+      KAFKA_CLIENT_ID: billing-service
+      KAFKA_CLIENT_SECRET: billing-service
     depends_on:
       postgres:
         condition: service_healthy
@@ -90,12 +101,12 @@ services:
       - app-network
 
   collection-management-service:
-    build:
-      context: ../
-      dockerfile: services/collection-management-service/Dockerfile
+    image: ashritha07/collection-management-service:${IMAGE_TAG:-latest}
     container_name: collection-management-service
-    env_file:
-      - ../services/collection-management-service/.env.dev
+    environment:
+      PORT: 3002
+      DATABASE_URL: postgres://postgres:root@postgres:5432/collection-management
+      NODE_ENV: development
     depends_on:
       postgres:
         condition: service_healthy
@@ -107,12 +118,26 @@ services:
       - app-network
 
   consumer-service:
-    build:
-      context: ../
-      dockerfile: services/consumer-service/Dockerfile
+    image: ashritha07/consumer-service:${IMAGE_TAG:-latest}
     container_name: consumer-service
-    env_file:
-      - ../services/consumer-service/.env.dev
+    environment:
+      PORT: 3003
+      NODE_ENV: development
+      SERVICE_NAME: consumer-service
+      API_PREFIX: /api/v1/consumer
+
+      DATABASE_URL: postgres://postgres:root@postgres:5432/Consumers
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: root
+      DB_NAME: Consumers
+      DB_POOL_MAX: 5
+      DB_POOL_MIN: 0
+      DB_POOL_ACQUIRE: 30000
+      DB_POOL_IDLE: 10000
+
+      KAFKA_BROKER: kafka:9092
     depends_on:
       postgres:
         condition: service_healthy
@@ -124,12 +149,12 @@ services:
       - app-network
 
   customer-support-service:
-    build:
-      context: ../
-      dockerfile: services/customer-support-service/Dockerfile
+    image: ashritha07/customer-support-service:${IMAGE_TAG:-latest}
     container_name: customer-support-service
-    env_file:
-      - ../services/customer-support-service/.env.dev
+    environment:
+      PORT: 3004
+      DATABASE_URL: postgres://postgres:root@postgres:5432/complaint-grievance-management
+      NODE_ENV: development
     depends_on:
       postgres:
         condition: service_healthy
@@ -141,12 +166,12 @@ services:
       - app-network
 
   gis-location-management-service:
-    build:
-      context: ../
-      dockerfile: services/gis-location-management-service/Dockerfile
+    image: ashritha07/gis-location-management-service:${IMAGE_TAG:-latest}
     container_name: gis-location-management-service
-    env_file:
-      - ../services/gis-location-management-service/.env.dev
+    environment:
+      PORT: 3005
+      DATABASE_URL: postgres://postgres:root@postgres:5432/gis-location-management
+      NODE_ENV: development
     depends_on:
       postgres:
         condition: service_healthy
@@ -158,12 +183,12 @@ services:
       - app-network
 
   meter-management-inventory-service:
-    build:
-      context: ../
-      dockerfile: services/meter-management-inventory-service/Dockerfile
+    image: ashritha07/meter-management-inventory-service:${IMAGE_TAG:-latest}
     container_name: meter-management-inventory-service
-    env_file:
-      - ../services/meter-management-inventory-service/.env.dev
+    environment:
+      PORT: 3006
+      DATABASE_URL: postgres://postgres:root@postgres:5432/meter-management-inventory
+      NODE_ENV: development
     depends_on:
       postgres:
         condition: service_healthy
@@ -175,12 +200,17 @@ services:
       - app-network
 
   notification-communication-service:
-    build:
-      context: ../
-      dockerfile: services/notification-communication-service/Dockerfile
+    image: ashritha07/notification-communication-service:${IMAGE_TAG:-latest}
     container_name: notification-communication-service
-    env_file:
-      - ../services/notification-communication-service/.env.dev
+    environment:
+      PORT: 3007
+      DATABASE_URL: postgres://postgres:root@postgres:5432/notification-communication
+      NODE_ENV: development
+
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_GROUP_ID: notification-communication-group
+      KAFKA_CLIENT_ID: notification-communication-service
+      KAFKA_CLIENT_SECRET: notification-communication-service
     depends_on:
       postgres:
         condition: service_healthy
@@ -192,12 +222,12 @@ services:
       - app-network
 
   policy-management-service:
-    build:
-      context: ../
-      dockerfile: services/policy-management-service/Dockerfile
+    image: ashritha07/policy-management-service:${IMAGE_TAG:-latest}
     container_name: policy-management-service
-    env_file:
-      - ../services/policy-management-service/.env.dev
+    environment:
+      PORT: 3008
+      DATABASE_URL: postgres://postgres:root@postgres:5432/policy-management
+      NODE_ENV: development
     depends_on:
       postgres:
         condition: service_healthy
@@ -209,12 +239,12 @@ services:
       - app-network
 
   third-party-integration-gateway-service:
-    build:
-      context: ../
-      dockerfile: services/third-party-integration-gateway-service/Dockerfile
+    image: ashritha07/third-party-integration-gateway-service:${IMAGE_TAG:-latest}
     container_name: third-party-integration-gateway-service
-    env_file:
-      - ../services/third-party-integration-gateway-service/.env.dev
+    environment:
+      PORT: 3009
+      DATABASE_URL: postgres://postgres:root@postgres:5432/third-party-integration-gateway
+      NODE_ENV: development
     depends_on:
       postgres:
         condition: service_healthy
@@ -226,12 +256,13 @@ services:
       - app-network
 
   user-identity-access-management-service:
-    build:
-      context: ../
-      dockerfile: services/user-identity-access-management-service/Dockerfile
+    image: ashritha07/user-identity-access-management-service:${IMAGE_TAG:-latest}
+
     container_name: user-identity-access-management-service
-    env_file:
-      - ../services/user-identity-access-management-service/.env.dev
+    environment:
+      PORT: 3010
+      DATABASE_URL: postgres://postgres:root@postgres:5432/user-identity-access-management
+      NODE_ENV: development
     depends_on:
       postgres:
         condition: service_healthy
@@ -243,12 +274,38 @@ services:
       - app-network
 
   user-service:
-    build:
-      context: ../
-      dockerfile: services/user-service/Dockerfile
+    image: ashritha07/user-service:${IMAGE_TAG:-latest}
     container_name: user-service
-    env_file:
-      - ../services/user-service/.env.dev
+    environment:
+      PORT: 3011
+      NODE_ENV: development
+      SERVICE_NAME: user-service
+      API_PREFIX: /api/v1/user
+
+      DATABASE_URL: postgres://postgres:root@postgres:5432/Users
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: root
+      DB_NAME: Users
+
+      JWT_SECRET: "1cc06f721e01d4e6f89af72e09681968a85798dd016e8817149f1564dee40018d0ee65a090162a309ae20e8dae1c4cafebcfcd11878cec9e8d022d7f9ed0ead9"
+      JWT_EXPIRES_IN: 24h
+      OTP_EXPIRES_IN: 5m
+      OTP_LENGTH: 6
+      TWILIO_ACCOUNT_SID: AC4c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2
+      TWILIO_AUTH_TOKEN: your-twilio-auth-token
+      TWILIO_PHONE_NUMBER: your-twilio-phone-number
+
+      SMTP_USER: ashritha.amigo@gmail.com
+      SMTP_PASSWORD: bbkk bkzy ctio fkrw
+      SMTP_HOST: ashritha.amigo@gmail.com
+      SMTP_PORT: 587
+      SMTP_IS_SECURE: true 
+
+      KAFKA_BROKERS: 'kafka:9092'
+      KAFKA_GROUP_ID: 'user-service-group'
+      KAFKA_CLIENT_ID: 'user-service'
     depends_on:
       postgres:
         condition: service_healthy
@@ -260,12 +317,12 @@ services:
       - app-network
 
   workflow-approval-service:
-    build:
-      context: ../
-      dockerfile: services/workflow-approval-service/Dockerfile
+    image: ashritha07/workflow-approval-service:${IMAGE_TAG:-latest}
     container_name: workflow-approval-service
-    env_file:
-      - ../services/workflow-approval-service/.env.dev
+    environment:
+      PORT: 3012
+      DATABASE_URL: postgres://postgres:root@postgres:5432/workflow-approval
+      NODE_ENV: development
     depends_on:
       postgres:
         condition: service_healthy

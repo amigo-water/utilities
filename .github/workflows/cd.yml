@@ -11,10 +11,10 @@ on:
       environment:
         description: 'Environment to deploy to'
         required: true
-        default: 'staging'
+        default: 'development'
         type: choice
         options:
-          - staging
+          - development
           - production
       image_tag:
         description: 'Image tag to deploy (default: latest commit sha)'
@@ -33,45 +33,53 @@ jobs:
     outputs:
       environment: ${{ steps.vars.outputs.environment }}
       url: ${{ steps.deploy.outputs.url }}
-    environment: 
-      name: ${{ github.event.inputs.environment || 'staging' }}
-      url: ${{ steps.deploy.outputs.url }}
+    # environment: 
+    #   name: ${{ github.event.inputs.environment || 'development' }}
+    #   url: ${{ steps.deploy.outputs.url }}F
     
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+    #   - name: Checkout code
+    #     uses: actions/checkout@v4
 
+    steps:
       - name: Set deployment variables
         id: vars
         run: |
-          ENV="${{ github.event.inputs.environment || 'staging' }}"
+          ENV="${{ github.event.inputs.environment || 'development' }}"
           TAG="${{ env.IMAGE_TAG }}"
           echo "environment=${ENV}" >> $GITHUB_OUTPUT
           echo "image_tag=${TAG}" >> $GITHUB_OUTPUT
           echo "compose_file=infra/docker-compose.${ENV}.yml" >> $GITHUB_OUTPUT
 
-      - name: Create environment file
-        run: |
-          cd infra
-          cat > .env << EOF
-          ENVIRONMENT=${{ steps.vars.outputs.environment }}
-          IMAGE_TAG=${{ steps.vars.outputs.image_tag }}
-          REGISTRY=${{ env.REGISTRY }}
-          REPO_OWNER=${{ github.repository_owner }}
+      # - name: Create environment files
+      #   run: |
+      #     cd infra
           
-          # Database
-          POSTGRES_USER=postgres
-          POSTGRES_PASSWORD=root
-          POSTGRES_DB=utility_services
+      #     # Create main .env file
+      #     cat > .env << EOF
+      #     ENVIRONMENT=${{ steps.vars.outputs.environment }}
+      #     IMAGE_TAG=${{ steps.vars.outputs.image_tag }}
+      #     EOF
           
-          # Kafka
-          KAFKA_BOOTSTRAP_SERVERS=kafka:9092
-          ZOOKEEPER_CONNECT=zookeeper:2181
-          KAFKA_HEAP_OPTS=-Xmx512m -Xms512m
+      #     # Create individual service .env files
+      #     mkdir -p ../services
           
-          # Application Environment
-          NODE_ENV=${{ steps.vars.outputs.environment }}
-          EOF
+      #     services=(
+      #       "analytics-reporting-service" "billing-service" "collection-management-service"
+      #       "consumer-service" "customer-support-service" "gis-location-management-service"
+      #       "meter-management-inventory-service" "notification-communication-service"
+      #       "policy-management-service" "third-party-integration-gateway-service"
+      #       "user-identity-access-management-service" "user-service" "workflow-approval-service"
+      #     )
+          
+      #     for service in "${services[@]}"; do
+      #       mkdir -p "../services/${service}"
+      #       cat > "../services/${service}/.env.dev" << EOF
+      #     NODE_ENV=${{ steps.vars.outputs.environment }}
+      #     DATABASE_URL=postgresql://postgres:root@postgres:5432/utility_services
+      #     KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      #     REDIS_URL=redis://redis:6379
+      #     EOF
+      #     done
 
       - name: Stop existing containers
         run: |
@@ -207,7 +215,7 @@ jobs:
           if [ "${{ steps.vars.outputs.environment }}" == "production" ]; then
             echo "url=https://api.utility-services.com" >> $GITHUB_OUTPUT
           else
-            echo "url=https://staging-api.utility-services.com" >> $GITHUB_OUTPUT
+            echo "url=https://development-api.utility-services.com" >> $GITHUB_OUTPUT
           fi
 
       - name: Run smoke tests
@@ -287,8 +295,8 @@ jobs:
       - name: Notify deployment status
         run: |
           if [ "${{ needs.deploy.result }}" == "success" ]; then
-            echo "✅ Deployment to ${{ needs.deploy.outputs.environment || 'staging' }} completed successfully!"
+            echo "✅ Deployment to ${{ needs.deploy.outputs.environment || 'development' }} completed successfully!"
             echo "🔗 URL: ${{ needs.deploy.outputs.url }}"
           else
-            echo "❌ Deployment to ${{ needs.deploy.outputs.environment || 'staging' }} failed!"
+            echo "❌ Deployment to ${{ needs.deploy.outputs.environment || 'development' }} failed!"
           fi
