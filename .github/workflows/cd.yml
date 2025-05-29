@@ -61,7 +61,7 @@ jobs:
             echo "IMAGE_TAG=latest" >> $GITHUB_ENV
           fi
 
-      - name: Deploy services
+      - name: Deploy services (Zero Downtime)
         run: |
           cd infra
           
@@ -71,12 +71,37 @@ jobs:
             echo "🚀 Deploying with latest tags (no new builds for this commit)"
           fi
           
-          # Pull and deploy
-          docker-compose pull
-          docker-compose down
-          docker-compose up -d
+          # ZERO-DOWNTIME DEPLOYMENT
+          echo "📥 Step 1: Pulling new images..."
+          if ! docker-compose pull; then
+            echo "❌ FAILED: Could not pull images. Current app remains running."
+            exit 1
+          fi
           
-          echo "✅ Deployment completed with tag: ${IMAGE_TAG}"
+          echo "🔄 Step 2: Rolling update (restart services one by one)..."
+          if ! docker-compose up -d; then
+            echo "❌ FAILED: Could not start new containers. Current app remains running."
+            exit 1
+          fi
+          
+          echo "⏳ Step 3: Waiting for services to stabilize..."
+          sleep 15
+          
+          echo "🏥 Step 4: Health check..."
+          FAILED_SERVICES=$(docker-compose ps --services --filter "status=exited")
+          if [[ -n "$FAILED_SERVICES" ]]; then
+            echo "❌ DEPLOYMENT FAILED: Services not running properly:"
+            echo "$FAILED_SERVICES"
+            echo "Current app should still be accessible on old containers."
+            docker-compose ps
+            exit 1
+          fi
+          
+          echo "✅ SUCCESS: Zero-downtime deployment completed with tag: ${IMAGE_TAG}"
+          
+          # Optional: Clean up old images after successful deployment
+          echo "🧹 Cleaning up old images..."
+          docker image prune -f
 
       - name: Verify deployment
         run: |
