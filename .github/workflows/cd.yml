@@ -36,7 +36,7 @@ jobs:
         run: |
           SHORT_SHA="${{ steps.get_sha.outputs.IMAGE_TAG }}"
           
-          if docker manifest inspect ashritha07/analytics-reporting-service:${SHORT_SHA} > /dev/null 2>&1; then
+          if docker manifest inspect ashritha07/workflow-approval-service:${SHORT_SHA} > /dev/null 2>&1; then
             echo "use_sha_tag=true" >> $GITHUB_OUTPUT
             echo "IMAGE_TAG=${SHORT_SHA}" >> $GITHUB_ENV
           else
