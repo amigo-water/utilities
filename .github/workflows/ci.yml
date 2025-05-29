@@ -13,9 +13,21 @@ env:
 
 jobs:
   changes:
-    runs-on: ubuntu-latest  # Using your private runner
+    runs-on: self-hosted  # Using your private runner
     outputs:
-      services: ${{ steps.changes.outputs.services }}
+      analytics-reporting-service: ${{ steps.changes.outputs.analytics-reporting-service }}
+      billing-service: ${{ steps.changes.outputs.billing-service }}
+      collection-management-service: ${{ steps.changes.outputs.collection-management-service }}
+      consumer-service: ${{ steps.changes.outputs.consumer-service }}
+      customer-support-service: ${{ steps.changes.outputs.customer-support-service }}
+      gis-location-management-service: ${{ steps.changes.outputs.gis-location-management-service }}
+      meter-management-inventory-service: ${{ steps.changes.outputs.meter-management-inventory-service }}
+      notification-communication-service: ${{ steps.changes.outputs.notification-communication-service }}
+      policy-management-service: ${{ steps.changes.outputs.policy-management-service }}
+      third-party-integration-gateway-service: ${{ steps.changes.outputs.third-party-integration-gateway-service }}
+      user-identity-access-management-service: ${{ steps.changes.outputs.user-identity-access-management-service }}
+      user-service: ${{ steps.changes.outputs.user-service }}
+      workflow-approval-service: ${{ steps.changes.outputs.workflow-approval-service }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v2
@@ -51,7 +63,7 @@ jobs:
 
   build-and-push:
     needs: changes
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     strategy:
       matrix:
         service: [
@@ -131,7 +143,7 @@ jobs:
 
   security-scan:
     needs: [changes, build-and-push]
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     if: needs.changes.outputs.services != ''
     strategy:
       matrix:
@@ -161,7 +173,20 @@ jobs:
           fi
 
       - name: Run Trivy vulnerability scanner
-        if: steps.check-changes.outputs.changed == 'true'
+        if: |
+          needs.changes.outputs.analytics-reporting-service == 'true' ||
+          needs.changes.outputs.billing-service == 'true' ||
+          needs.changes.outputs.collection-management-service == 'true' ||
+          needs.changes.outputs.consumer-service == 'true' ||
+          needs.changes.outputs.customer-support-service == 'true' ||
+          needs.changes.outputs.gis-location-management-service == 'true' ||
+          needs.changes.outputs.meter-management-inventory-service == 'true' ||
+          needs.changes.outputs.notification-communication-service == 'true' ||
+          needs.changes.outputs.policy-management-service == 'true' ||
+          needs.changes.outputs.third-party-integration-gateway-service == 'true' ||
+          needs.changes.outputs.user-identity-access-management-service == 'true' ||
+          needs.changes.outputs.user-service == 'true' ||
+          needs.changes.outputs.workflow-approval-service == 'true'
         uses: aquasecurity/trivy-action@master
         with:
           # image-ref: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.service }}:${{ github.sha }}
@@ -177,7 +202,7 @@ jobs:
 
   notify-success:
     needs: [build-and-push, security-scan]
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     if: success()
     steps:
       - name: Notify success
