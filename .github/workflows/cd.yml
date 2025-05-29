@@ -1,4 +1,3 @@
-# .github/workflows/cd.yml
 name: CD - Deploy to Environment
 
 on:
@@ -31,24 +30,90 @@ jobs:
           echo "IMAGE_TAG=${SHORT_SHA}" >> $GITHUB_OUTPUT
           echo "IMAGE_TAG=${SHORT_SHA}" >> $GITHUB_ENV
 
-      - name: Check if images exist
+      - name: Check available images and create dynamic compose
         id: check-images
         run: |
           SHORT_SHA="${{ steps.get_sha.outputs.IMAGE_TAG }}"
           
-          if docker manifest inspect ashritha07/workflow-approval-service:${SHORT_SHA} > /dev/null 2>&1; then
-            echo "use_sha_tag=true" >> $GITHUB_OUTPUT
-            echo "IMAGE_TAG=${SHORT_SHA}" >> $GITHUB_ENV
-          else
-            echo "use_sha_tag=false" >> $GITHUB_OUTPUT
-            echo "IMAGE_TAG=latest" >> $GITHUB_ENV
-          fi
+          # List of all your services
+          services=(
+            "user-identity-access-management-service"
+            "policy-management-service" 
+            "user-service"
+            "consumer-service"
+            "customer-support-service"
+            "third-party-integration-gateway-service"
+            "meter-management-inventory-service"
+            "billing-service"
+            "gis-location-management-service"
+            "notification-communication-service"
+            "collection-management-service"
+            "analytics-reporting-service"
+            "workflow-approval-service"
+          )
+          
+          # Create a temporary compose override file
+          cat > infra/docker-compose.override.yml << 'EOF'
+          version: '3.8'
+          services:
+          EOF
+          
+          # Check each service and set appropriate tag
+          for service in "${services[@]}"; do
+            echo "Checking service: $service"
+            if docker manifest inspect ashritha07/${service}:${SHORT_SHA} > /dev/null 2>&1; then
+              echo "✓ Found SHA tag for $service"
+              cat >> infra/docker-compose.override.yml << EOF
+            ${service}:
+              image: ashritha07/${service}:${SHORT_SHA}
+          EOF
+            elif docker manifest inspect ashritha07/${service}:latest > /dev/null 2>&1; then
+              echo "✓ Using latest tag for $service"
+              cat >> infra/docker-compose.override.yml << EOF
+            ${service}:
+              image: ashritha07/${service}:latest
+          EOF
+            else
+              echo "⚠️ No image found for $service, skipping..."
+            fi
+          done
+          
+          echo "Generated docker-compose.override.yml:"
+          cat infra/docker-compose.override.yml
 
       - name: Deploy
         run: |
           cd infra
-          docker-compose pull
+          
+          # Pull only available images (ignore failures)
+          echo "Pulling available images..."
+          docker-compose pull --ignore-pull-failures || true
+          
+          # Stop existing containers
           docker-compose down
+          
+          # Start services
+          echo "Starting services..."
           docker-compose up -d
+          
+          # Wait and check status
           sleep 10
           docker-compose ps
+          
+          # Show logs for any failed services
+          echo "Checking for failed services..."
+          failed_services=$(docker-compose ps --services --filter "status=exited")
+          if [[ ! -z "$failed_services" ]]; then
+            echo "Failed services detected: $failed_services"
+            for service in $failed_services; do
+              echo "=== Logs for $service ==="
+              docker-compose logs --tail=20 $service
+            done
+            exit 1
+          fi
+          
+      - name: Cleanup
+        if: always()
+        run: |
+          # Clean up the override file
+          rm -f infra/docker-compose.override.yml
