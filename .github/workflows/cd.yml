@@ -22,102 +22,33 @@ jobs:
         id: get_sha
         run: |
           if [[ "${{ github.event_name }}" == "workflow_run" ]]; then
-            # Use SHA from the triggering workflow
             ACTUAL_SHA="${{ github.event.workflow_run.head_sha }}"
           else
-            # Use current SHA for manual dispatch
             ACTUAL_SHA="${{ github.sha }}"
           fi
           
-          # Get short SHA (8 characters) - same as CI
           SHORT_SHA=$(echo ${ACTUAL_SHA} | cut -c1-8)
-          
-          echo "=== SHA DEBUG ==="
-          echo "Event name: ${{ github.event_name }}"
-          echo "Full SHA: ${ACTUAL_SHA}"
-          echo "Short SHA: ${SHORT_SHA}"
-          echo "================"
-          
-          # Set as output and environment variable
           echo "IMAGE_TAG=${SHORT_SHA}" >> $GITHUB_OUTPUT
           echo "IMAGE_TAG=${SHORT_SHA}" >> $GITHUB_ENV
 
-      - name: Check if images exist with SHA tag
+      - name: Check if images exist
         id: check-images
         run: |
           SHORT_SHA="${{ steps.get_sha.outputs.IMAGE_TAG }}"
           
-          echo "🔍 Checking if images exist with SHA: ${SHORT_SHA}"
-          
-          # Test if any image exists with this SHA tag
-          # We'll check one service as a representative
           if docker manifest inspect ashritha07/analytics-reporting-service:${SHORT_SHA} > /dev/null 2>&1; then
-            echo "✅ Images with SHA ${SHORT_SHA} found"
             echo "use_sha_tag=true" >> $GITHUB_OUTPUT
             echo "IMAGE_TAG=${SHORT_SHA}" >> $GITHUB_ENV
           else
-            echo "⚠️ No images found with SHA ${SHORT_SHA}, using latest tags"
             echo "use_sha_tag=false" >> $GITHUB_OUTPUT
             echo "IMAGE_TAG=latest" >> $GITHUB_ENV
           fi
 
-      - name: Deploy services (Zero Downtime)
+      - name: Deploy
         run: |
           cd infra
-          
-          if [[ "${{ steps.check-images.outputs.use_sha_tag }}" == "true" ]]; then
-            echo "🚀 Deploying with SHA tag: ${{ steps.get_sha.outputs.IMAGE_TAG }}"
-          else
-            echo "🚀 Deploying with latest tags (no new builds for this commit)"
-          fi
-          
-          # ZERO-DOWNTIME DEPLOYMENT
-          echo "📥 Step 1: Pulling new images..."
-          if ! docker-compose pull; then
-            echo "❌ FAILED: Could not pull images. Current app remains running."
-            exit 1
-          fi
-          
-          echo "🔄 Step 2: Rolling update (restart services one by one)..."
-          if ! docker-compose up -d; then
-            echo "❌ FAILED: Could not start new containers. Current app remains running."
-            exit 1
-          fi
-          
-          echo "⏳ Step 3: Waiting for services to stabilize..."
-          sleep 15
-          
-          echo "🏥 Step 4: Health check..."
-          FAILED_SERVICES=$(docker-compose ps --services --filter "status=exited")
-          if [[ -n "$FAILED_SERVICES" ]]; then
-            echo "❌ DEPLOYMENT FAILED: Services not running properly:"
-            echo "$FAILED_SERVICES"
-            echo "Current app should still be accessible on old containers."
-            docker-compose ps
-            exit 1
-          fi
-          
-          echo "✅ SUCCESS: Zero-downtime deployment completed with tag: ${IMAGE_TAG}"
-          
-          # Optional: Clean up old images after successful deployment
-          echo "🧹 Cleaning up old images..."
-          docker image prune -f
-
-      - name: Verify deployment
-        run: |
-          cd infra
-          echo "🔍 Verifying deployment..."
+          docker-compose pull
+          docker-compose down
+          docker-compose up -d
+          sleep 10
           docker-compose ps
-          
-          # Clean up old images
-          docker image prune -f
-
-      - name: Deployment summary
-        run: |
-          echo "## 🎉 Deployment Summary" >> $GITHUB_STEP_SUMMARY
-          if [[ "${{ steps.check-images.outputs.use_sha_tag }}" == "true" ]]; then
-            echo "- **Tag Used:** ${{ steps.get_sha.outputs.IMAGE_TAG }} (New build)" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "- **Tag Used:** latest (No changes, reusing existing images)" >> $GITHUB_STEP_SUMMARY
-          fi
-          echo "- **Status:** ✅ Successful" >> $GITHUB_STEP_SUMMARY
