@@ -8,9 +8,6 @@ on:
     types: [completed]
   workflow_dispatch:
 
-env:
-  IMAGE_TAG: main-${{ github.sha }}
-
 jobs:
   deploy:
     if: github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch'
@@ -20,21 +17,46 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Debug IMAGE_TAG
+      - name: Get correct SHA and set IMAGE_TAG
+        id: get_sha
         run: |
-          echo "=== IMAGE_TAG DEBUG ==="
-          echo "IMAGE_TAG from env: ${{ env.IMAGE_TAG }}"
-          echo "GitHub SHA: ${{ github.sha }}"
-          echo "GitHub SHA (first 7 chars): ${GITHUB_SHA:0:7}"
-          echo "Expected full format: main-${{ github.sha }}"
-          echo "Expected short format: main-${GITHUB_SHA:0:7}"
+          if [[ "${{ github.event_name }}" == "workflow_run" ]]; then
+            # Use SHA from the triggering workflow
+            ACTUAL_SHA="${{ github.event.workflow_run.head_sha }}"
+          else
+            # Use current SHA for manual dispatch
+            ACTUAL_SHA="${{ github.sha }}"
+          fi
+          
+          # For CI workflow compatibility, we need to match the metadata action output
+          # The metadata action creates: main-<sha>, <sha>, latest
+          # Let's try the format that matches your CI metadata action
+          IMAGE_TAG="main-${ACTUAL_SHA}"
+          
+          echo "=== SHA AND TAG DEBUG ==="
+          echo "Event name: ${{ github.event_name }}"
+          echo "Current github.sha: ${{ github.sha }}"
+          echo "Workflow run head_sha: ${{ github.event.workflow_run.head_sha }}"
+          echo "Using ACTUAL_SHA: ${ACTUAL_SHA}"
+          echo "Final IMAGE_TAG: ${IMAGE_TAG}"
           echo "======================="
+          
+          # Set as output and environment variable
+          echo "IMAGE_TAG=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "IMAGE_TAG=${IMAGE_TAG}" >> $GITHUB_ENV
+
+      - name: Check what images exist
+        run: |
+          echo "=== CHECKING DOCKER HUB IMAGES ==="
+          # Check what tags exist for one of your services
+          curl -s "https://registry.hub.docker.com/v2/repositories/ashritha07/analytics-reporting-service/tags/" | jq -r '.results[].name' | head -10
+          echo "==================================="
 
       - name: Create environment file
         run: |
           cd infra
           cat > .env << EOF
-          IMAGE_TAG=${{ env.IMAGE_TAG }}
+          IMAGE_TAG=${{ steps.get_sha.outputs.IMAGE_TAG }}
           POSTGRES_USER=postgres
           POSTGRES_PASSWORD=root
           POSTGRES_DB=utility_services
