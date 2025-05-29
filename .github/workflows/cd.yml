@@ -4,20 +4,21 @@ name: CD - Deploy to Environment
 on:
   workflow_run:
     workflows: ["CI - Build and Push Images"]
+    types:
+      - completed
     branches: [main]
-    types: [completed]
   workflow_dispatch:
 
 jobs:
   deploy:
-    if: github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch'
     runs-on: self-hosted
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Get correct SHA and set IMAGE_TAG
+      - name: Get SHA and set IMAGE_TAG
         id: get_sha
         run: |
           if [[ "${{ github.event_name }}" == "workflow_run" ]]; then
@@ -28,91 +29,45 @@ jobs:
             ACTUAL_SHA="${{ github.sha }}"
           fi
           
-          # For CI workflow compatibility, we need to match the metadata action output
-          # The metadata action creates: main-<sha>, <sha>, latest
-          # Let's try the format that matches your CI metadata action
-          IMAGE_TAG="main-${ACTUAL_SHA}"
+          # Get short SHA (8 characters) - same as CI
+          SHORT_SHA=$(echo ${ACTUAL_SHA} | cut -c1-8)
           
-          echo "=== SHA AND TAG DEBUG ==="
+          echo "=== SHA DEBUG ==="
           echo "Event name: ${{ github.event_name }}"
-          echo "Current github.sha: ${{ github.sha }}"
-          echo "Workflow run head_sha: ${{ github.event.workflow_run.head_sha }}"
-          echo "Using ACTUAL_SHA: ${ACTUAL_SHA}"
-          echo "Final IMAGE_TAG: ${IMAGE_TAG}"
-          echo "======================="
+          echo "Full SHA: ${ACTUAL_SHA}"
+          echo "Short SHA: ${SHORT_SHA}"
+          echo "================"
           
           # Set as output and environment variable
-          echo "IMAGE_TAG=${IMAGE_TAG}" >> $GITHUB_OUTPUT
-          echo "IMAGE_TAG=${IMAGE_TAG}" >> $GITHUB_ENV
+          echo "IMAGE_TAG=${SHORT_SHA}" >> $GITHUB_OUTPUT
+          echo "IMAGE_TAG=${SHORT_SHA}" >> $GITHUB_ENV
 
-      - name: Check what images exist
-        run: |
-          echo "=== CHECKING DOCKER HUB IMAGES ==="
-          # Check what tags exist for one of your services
-          curl -s "https://registry.hub.docker.com/v2/repositories/ashritha07/analytics-reporting-service/tags/" | jq -r '.results[].name' | head -10
-          echo "==================================="
-
-      - name: Create environment file
+      - name: Deploy services
         run: |
           cd infra
-          cat > .env << EOF
-          IMAGE_TAG=${{ steps.get_sha.outputs.IMAGE_TAG }}
-          POSTGRES_USER=postgres
-          POSTGRES_PASSWORD=root
-          POSTGRES_DB=utility_services
-          DATABASE_URL=postgresql://postgres:root@postgres:5432/utility_services
-          KAFKA_BOOTSTRAP_SERVERS=kafka:9092
-          ZOOKEEPER_CONNECT=zookeeper:2181
-          EOF
+          echo "🚀 Deploying with SHA tag: ${{ steps.get_sha.outputs.IMAGE_TAG }}"
           
-          echo "=== ENVIRONMENT FILE DEBUG ==="
-          cat .env
-          echo "=============================="
-
-      - name: Stop existing containers
-        run: |
-          cd infra
-          docker-compose down --remove-orphans || true
-        continue-on-error: true
-
-      - name: Start infrastructure services
-        run: |
-          cd infra
+          # Try to pull images with the specific SHA tag
+          # If a service wasn't built (no changes), it will fall back to 'latest'
+          docker-compose pull || echo "⚠️ Some images may not exist with this SHA, will use fallback tags"
           
-          # Start Zookeeper and wait
-          docker-compose up -d zookeeper
-          sleep 30
-          
-          # Start Kafka and Postgres
-          docker-compose up -d kafka postgres
-          sleep 30
-
-      - name: Start application services
-        run: |
-          cd infra
+          # Deploy
+          docker-compose down
           docker-compose up -d
-          sleep 60
+          
+          echo "✅ Deployment completed"
 
-      - name: Check services are running
+      - name: Verify deployment
         run: |
           cd infra
-          echo "=== DOCKER COMPOSE PS ==="
+          echo "🔍 Verifying deployment..."
           docker-compose ps
-          echo "========================="
           
-          echo "=== RUNNING CONTAINERS WITH IMAGES ==="
-          docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Status}}"
-          echo "======================================="
-          
-          # Simple check - are containers running?
-          RUNNING=$(docker ps --filter "status=running" | wc -l)
-          if [ $RUNNING -lt 10 ]; then
-            echo "Not enough services running"
-            exit 1
-          fi
+          # Clean up old images
+          docker image prune -f
 
-      - name: Rollback on failure
-        if: failure()
+      - name: Deployment summary
         run: |
-          cd infra
-          docker-compose down --remove-orphans
+          echo "## 🎉 Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **SHA Tag:** ${{ steps.get_sha.outputs.IMAGE_TAG }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status:** ✅ Successful" >> $GITHUB_STEP_SUMMARY

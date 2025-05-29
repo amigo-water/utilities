@@ -10,7 +10,7 @@ on:
 
 env:
   REGISTRY: docker.io
-  IMAGE_TAG: main-${{ github.sha }}
+  IMAGE_TAG: ${{ github.sha }}
 
 jobs:
   changes:
@@ -29,9 +29,18 @@ jobs:
       user-identity-access-management-service: ${{ steps.changes.outputs.user-identity-access-management-service }}
       user-service: ${{ steps.changes.outputs.user-service }}
       workflow-approval-service: ${{ steps.changes.outputs.workflow-approval-service }}
+      # Output the short SHA for CD to use
+      short_sha: ${{ steps.set-sha.outputs.short_sha }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Set short SHA
+        id: set-sha
+        run: |
+          SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-8)
+          echo "short_sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
+          echo "Short SHA: ${SHORT_SHA}"
         
       - name: Detect changes
         uses: dorny/paths-filter@v2
@@ -96,18 +105,16 @@ jobs:
           SERVICE_OUTPUT="${{ matrix.service }}"
           SERVICE_CHANGED=$(echo '${{ toJson(needs.changes.outputs) }}' | jq -r --arg service "$SERVICE_OUTPUT" '.[$service]')
           
-          # Validate the result
-          if [[ "$SERVICE_CHANGED" == "null" ]] || [[ -z "$SERVICE_CHANGED" ]]; then
-            echo "⚠️ Warning: Could not determine change status for $SERVICE_OUTPUT"
-            SERVICE_CHANGED="false"
-          fi
-          
-          if [[ "$SERVICE_CHANGED" == "true" ]] || [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          # Only build if changed OR manual workflow_dispatch
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             echo "changed=true" >> $GITHUB_OUTPUT
-            echo "🔄 Building ${{ matrix.service }} (changed: $SERVICE_CHANGED)"
+            echo "🔄 Building ${{ matrix.service }} (manual trigger - build all)"
+          elif [[ "$SERVICE_CHANGED" == "true" ]]; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "🔄 Building ${{ matrix.service }} (service changed)"
           else
             echo "changed=false" >> $GITHUB_OUTPUT
-            echo "⏭️ Skipping ${{ matrix.service }} (no changes)"
+            echo "⏭️ Skipping ${{ matrix.service }} (no changes detected)"
           fi
 
       - name: Set up Docker Buildx
@@ -121,11 +128,7 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Verify Docker login
-        if: steps.check-changes.outputs.changed == 'true'
-        run: docker info
-
-      - name: Build and push Docker image with simple tagging
+      - name: Build and push Docker image
         if: steps.check-changes.outputs.changed == 'true'
         id: build
         uses: docker/build-push-action@v5
@@ -134,7 +137,7 @@ jobs:
           file: ./services/${{ matrix.service }}/Dockerfile
           push: true
           tags: |
-            docker.io/ashritha07/${{ matrix.service }}:${{ env.IMAGE_TAG }}
+            docker.io/ashritha07/${{ matrix.service }}:${{ needs.changes.outputs.short_sha }}
             docker.io/ashritha07/${{ matrix.service }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -145,16 +148,7 @@ jobs:
         run: |
           echo "## 🐳 Built ${{ matrix.service }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Image:** docker.io/ashritha07/${{ matrix.service }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Tags:** ${{ env.IMAGE_TAG }}, latest" >> $GITHUB_STEP_SUMMARY
-          echo "- **Digest:** ${{ steps.build.outputs.digest }}" >> $GITHUB_STEP_SUMMARY
-
-      - name: Debug information
-        run: |
-          echo "Service: ${{ matrix.service }}"
-          echo "IMAGE_TAG: ${{ env.IMAGE_TAG }}"
-          echo "All outputs: ${{ toJson(needs.changes.outputs) }}"
-          SERVICE_CHANGED=$(echo '${{ toJson(needs.changes.outputs) }}' | jq -r --arg service "${{ matrix.service }}" '.[$service]')
-          echo "Service changed: $SERVICE_CHANGED"
+          echo "- **Tags:** ${{ needs.changes.outputs.short_sha }}, latest" >> $GITHUB_STEP_SUMMARY
 
   notify-success:
     needs: [build-and-push]
@@ -164,6 +158,4 @@ jobs:
       - name: Notify success
         run: |
           echo "✅ CI Pipeline completed successfully"
-          echo "🚀 Images built and pushed with tag: ${{ env.IMAGE_TAG }}"
-          echo "## 🎉 CI Pipeline Success" >> $GITHUB_STEP_SUMMARY
-          echo "Successfully completed build and push for changed services" >> $GITHUB_STEP_SUMMARY
+          echo "🚀 Images built with SHA: ${{ needs.changes.outputs.short_sha }}"
