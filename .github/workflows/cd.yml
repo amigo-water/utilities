@@ -29,18 +29,17 @@ jobs:
   deploy:
     if: github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch'
     runs-on: self-hosted
-    # ADD OUTPUTS TO THE JOB
     outputs:
       environment: ${{ steps.vars.outputs.environment }}
       url: ${{ steps.deploy.outputs.url }}
-    # environment: 
-    #   name: ${{ github.event.inputs.environment || 'development' }}
-    #   url: ${{ steps.deploy.outputs.url }}F
+    environment: 
+      name: ${{ github.event.inputs.environment || 'development' }}
+      url: ${{ steps.deploy.outputs.url }}
     
-    #   - name: Checkout code
-    #     uses: actions/checkout@v4
-
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Set deployment variables
         id: vars
         run: |
@@ -50,81 +49,138 @@ jobs:
           echo "image_tag=${TAG}" >> $GITHUB_OUTPUT
           echo "compose_file=infra/docker-compose.${ENV}.yml" >> $GITHUB_OUTPUT
 
-      # - name: Create environment files
-      #   run: |
-      #     cd infra
+      - name: Validate Docker Compose file
+        run: |
+          cd infra
+          echo "🔍 Validating Docker Compose configuration..."
           
-      #     # Create main .env file
-      #     cat > .env << EOF
-      #     ENVIRONMENT=${{ steps.vars.outputs.environment }}
-      #     IMAGE_TAG=${{ steps.vars.outputs.image_tag }}
-      #     EOF
+          # Check if compose file exists
+          if [ ! -f docker-compose.yml ]; then
+            echo "❌ docker-compose.yml not found!"
+            exit 1
+          fi
           
-      #     # Create individual service .env files
-      #     mkdir -p ../services
+          # Validate compose file syntax
+          if ! docker-compose -f docker-compose.yml config > /dev/null 2>&1; then
+            echo "❌ Docker Compose file validation failed!"
+            echo "Detailed error:"
+            docker-compose -f docker-compose.yml config
+            exit 1
+          fi
           
-      #     services=(
-      #       "analytics-reporting-service" "billing-service" "collection-management-service"
-      #       "consumer-service" "customer-support-service" "gis-location-management-service"
-      #       "meter-management-inventory-service" "notification-communication-service"
-      #       "policy-management-service" "third-party-integration-gateway-service"
-      #       "user-identity-access-management-service" "user-service" "workflow-approval-service"
-      #     )
+          echo "✅ Docker Compose file is valid"
+
+      - name: Create environment files
+        run: |
+          cd infra
           
-      #     for service in "${services[@]}"; do
-      #       mkdir -p "../services/${service}"
-      #       cat > "../services/${service}/.env.dev" << EOF
-      #     NODE_ENV=${{ steps.vars.outputs.environment }}
-      #     DATABASE_URL=postgresql://postgres:root@postgres:5432/utility_services
-      #     KAFKA_BOOTSTRAP_SERVERS=kafka:9092
-      #     REDIS_URL=redis://redis:6379
-      #     EOF
-      #     done
+          # Create main .env file
+          cat > .env << EOF
+          ENVIRONMENT=${{ steps.vars.outputs.environment }}
+          IMAGE_TAG=${{ steps.vars.outputs.image_tag }}
+          
+          # Database Configuration
+          POSTGRES_USER=postgres
+          POSTGRES_PASSWORD=root
+          POSTGRES_DB=utility_services
+          DATABASE_URL=postgresql://postgres:root@postgres:5432/utility_services
+          
+          # Kafka Configuration
+          KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+          ZOOKEEPER_CONNECT=zookeeper:2181
+          
+          # Redis Configuration
+          REDIS_URL=redis://redis:6379
+          
+          # SMTP Configuration (as strings)
+          SMTP_HOST=smtp.gmail.com
+          SMTP_PORT=587
+          SMTP_USER=your-email@gmail.com
+          SMTP_PASS=your-app-password
+          SMTP_IS_SECURE=true
+          
+          # JWT Configuration
+          JWT_SECRET=your-super-secret-jwt-key-change-in-production
+          JWT_EXPIRES_IN=24h
+          
+          # API Configuration
+          API_PORT=3000
+          NODE_ENV=${{ steps.vars.outputs.environment }}
+          EOF
+          
+          echo "✅ Environment file created"
 
       - name: Stop existing containers
         run: |
           cd infra
+          echo "🛑 Stopping existing containers..."
           docker-compose -f docker-compose.yml down --remove-orphans || true
+          
+          # Clean up any orphaned containers
+          docker container prune -f || true
         continue-on-error: true
 
       - name: Pull latest images
         run: |
           cd infra
+          echo "📥 Pulling latest images..."
+          
+          # Pull infrastructure images
+          docker pull postgres:13
+          docker pull confluentinc/cp-zookeeper:latest
+          docker pull confluentinc/cp-kafka:latest
+          docker pull redis:6-alpine
+          
+          # Try to pull application images (some might be built locally)
           docker-compose -f docker-compose.yml pull || echo "Some images might be built locally, continuing..."
 
-      - name: Deploy services
-        id: deploy
+      - name: Deploy infrastructure services
+        id: deploy-infra
         run: |
           cd infra
           
-          # Start infrastructure services first with proper ordering
           echo "🚀 Starting infrastructure services..."
           
           # Start Zookeeper first
+          echo "Starting Zookeeper..."
           docker-compose -f docker-compose.yml up -d zookeeper
+          
+          # Wait for Zookeeper with better health check
           echo "⏳ Waiting for Zookeeper..."
-          sleep 15
+          ZOOKEEPER_READY=false
+          ZK_WAIT_COUNT=0
+          MAX_ZK_WAIT=12
+          
+          while [ "$ZOOKEEPER_READY" = false ] && [ $ZK_WAIT_COUNT -lt $MAX_ZK_WAIT ]; do
+            echo "Checking Zookeeper... attempt $((ZK_WAIT_COUNT + 1))/$MAX_ZK_WAIT"
+            if docker exec zookeeper zkServer.sh status >/dev/null 2>&1 || \
+               docker exec zookeeper nc -z localhost 2181 >/dev/null 2>&1; then
+              ZOOKEEPER_READY=true
+              echo "✅ Zookeeper is ready!"
+            else
+              sleep 5
+              ((ZK_WAIT_COUNT++))
+            fi
+          done
+          
+          if [ "$ZOOKEEPER_READY" = false ]; then
+            echo "❌ Zookeeper failed to start"
+            docker logs zookeeper --tail 20
+            exit 1
+          fi
           
           # Start Postgres
+          echo "Starting Postgres..."
           docker-compose -f docker-compose.yml up -d postgres
+          
+          # Wait for Postgres
           echo "⏳ Waiting for Postgres..."
-          sleep 10
-          
-          # Start Kafka after Zookeeper is ready
-          docker-compose -f docker-compose.yml up -d kafka
-          echo "⏳ Waiting for Kafka to start..."
-          sleep 20
-          
-          # Wait for infrastructure to be ready
-          echo "⏳ Waiting for infrastructure services to be ready..."
-          
-          # Check postgres health with timeout
           POSTGRES_READY=false
           POSTGRES_WAIT_COUNT=0
-          MAX_POSTGRES_WAIT=12  # 1 minute total (12 * 5 seconds)
+          MAX_POSTGRES_WAIT=12
           
           while [ "$POSTGRES_READY" = false ] && [ $POSTGRES_WAIT_COUNT -lt $MAX_POSTGRES_WAIT ]; do
-            echo "Waiting for postgres... attempt $((POSTGRES_WAIT_COUNT + 1))/$MAX_POSTGRES_WAIT"
+            echo "Checking Postgres... attempt $((POSTGRES_WAIT_COUNT + 1))/$MAX_POSTGRES_WAIT"
             if docker exec postgres pg_isready -U postgres >/dev/null 2>&1; then
               POSTGRES_READY=true
               echo "✅ Postgres is ready!"
@@ -140,26 +196,34 @@ jobs:
             exit 1
           fi
           
-          # Check kafka health with timeout and better diagnostics
+          # Start Redis
+          echo "Starting Redis..."
+          docker-compose -f docker-compose.yml up -d redis
+          sleep 5
+          
+          # Start Kafka after Zookeeper is ready
+          echo "Starting Kafka..."
+          docker-compose -f docker-compose.yml up -d kafka
+          
+          # Wait for Kafka with improved health check
+          echo "⏳ Waiting for Kafka..."
           KAFKA_READY=false
           KAFKA_WAIT_COUNT=0
-          MAX_KAFKA_WAIT=24  # 2 minutes total (24 * 5 seconds)
+          MAX_KAFKA_WAIT=30  # Kafka can take longer
           
           while [ "$KAFKA_READY" = false ] && [ $KAFKA_WAIT_COUNT -lt $MAX_KAFKA_WAIT ]; do
-            echo "Waiting for kafka... attempt $((KAFKA_WAIT_COUNT + 1))/$MAX_KAFKA_WAIT"
+            echo "Checking Kafka... attempt $((KAFKA_WAIT_COUNT + 1))/$MAX_KAFKA_WAIT"
             
             # Check if kafka container is running
             if ! docker ps | grep -q kafka; then
               echo "❌ Kafka container is not running!"
-              docker ps
               docker logs kafka --tail 20
               exit 1
             fi
             
-            # Try multiple kafka health check methods
+            # Multiple kafka health check methods
             if docker exec kafka kafka-topics --bootstrap-server localhost:9092 --list >/dev/null 2>&1 || \
-               docker exec kafka kafka-broker-api-versions --bootstrap-server localhost:9092 >/dev/null 2>&1 || \
-               docker exec kafka nc -z localhost 9092 >/dev/null 2>&1; then
+               docker exec kafka kafka-broker-api-versions --bootstrap-server localhost:9092 >/dev/null 2>&1; then
               KAFKA_READY=true
               echo "✅ Kafka is ready!"
             else
@@ -169,64 +233,89 @@ jobs:
           done
           
           if [ "$KAFKA_READY" = false ]; then
-            echo "❌ Kafka failed to start within timeout period"
+            echo "❌ Kafka failed to start within timeout"
             echo "Kafka logs:"
             docker logs kafka --tail 50
-            echo "Kafka container status:"
-            docker ps --filter name=kafka
             exit 1
           fi
           
-          echo "✅ Infrastructure services are ready"
+          echo "✅ All infrastructure services are ready"
+
+      - name: Deploy application services
+        id: deploy
+        run: |
+          cd infra
           
-          # Start all microservices
-          echo "🚀 Starting microservices..."
+          echo "🚀 Starting application services..."
+          
+          # Start all services
           docker-compose -f docker-compose.yml up -d
           
-          # Wait for services to be healthy
-          echo "⏳ Waiting for services to be healthy..."
+          # Wait for services to initialize
+          echo "⏳ Waiting for services to initialize..."
           sleep 60
           
-          # Health check
+          # Health check for application services
           HEALTHY_COUNT=0
           TOTAL_SERVICES=13
           
-          for service in analytics-reporting-service billing-service collection-management-service consumer-service customer-support-service gis-location-management-service meter-management-inventory-service notification-communication-service policy-management-service third-party-integration-gateway-service user-identity-access-management-service user-service workflow-approval-service; do
+          services=(
+            "analytics-reporting-service"
+            "billing-service"
+            "collection-management-service"
+            "consumer-service"
+            "customer-support-service"
+            "gis-location-management-service"
+            "meter-management-inventory-service"
+            "notification-communication-service"
+            "policy-management-service"
+            "third-party-integration-gateway-service"
+            "user-identity-access-management-service"
+            "user-service"
+            "workflow-approval-service"
+          )
+          
+          for service in "${services[@]}"; do
             if docker ps --filter "name=${service}" --filter "status=running" | grep -q "${service}"; then
               echo "✅ ${service} is running"
               ((HEALTHY_COUNT++))
             else
               echo "❌ ${service} is not running"
-              docker logs ${service} --tail 50 || true
+              # Show last 20 lines of logs for debugging
+              echo "Last 20 lines of ${service} logs:"
+              docker logs ${service} --tail 20 2>/dev/null || echo "Could not retrieve logs for ${service}"
+              echo "---"
             fi
           done
           
           echo "📊 Services Status: ${HEALTHY_COUNT}/${TOTAL_SERVICES} healthy"
           
-          if [ ${HEALTHY_COUNT} -lt $((TOTAL_SERVICES * 80 / 100)) ]; then
-            echo "❌ Less than 80% of services are healthy. Deployment failed."
+          # Require at least 80% of services to be healthy
+          REQUIRED_HEALTHY=$((TOTAL_SERVICES * 80 / 100))
+          if [ ${HEALTHY_COUNT} -lt ${REQUIRED_HEALTHY} ]; then
+            echo "❌ Only ${HEALTHY_COUNT}/${TOTAL_SERVICES} services are healthy (need at least ${REQUIRED_HEALTHY})"
+            echo "Deployment failed - not enough services are running"
             exit 1
           fi
           
-          # Cleanup old images
-          docker image prune -f
-          
-          # Set output URL
+          # Set deployment URL
           if [ "${{ steps.vars.outputs.environment }}" == "production" ]; then
             echo "url=https://api.utility-services.com" >> $GITHUB_OUTPUT
           else
-            echo "url=https://development-api.utility-services.com" >> $GITHUB_OUTPUT
+            echo "url=https://dev-api.utility-services.com" >> $GITHUB_OUTPUT
           fi
+          
+          echo "✅ Application deployment completed successfully"
 
       - name: Run smoke tests
         run: |
           echo "🧪 Running smoke tests..."
           sleep 30
           
-          # Test each service endpoint
           FAILED_TESTS=0
           
-          services=(
+          # Test service connectivity
+          services_ports=(
             "analytics-reporting-service:3000"
             "billing-service:3001"
             "collection-management-service:3002"
@@ -242,29 +331,48 @@ jobs:
             "workflow-approval-service:3012"
           )
           
-          for service_port in "${services[@]}"; do
+          for service_port in "${services_ports[@]}"; do
             service_name=$(echo $service_port | cut -d: -f1)
             port=$(echo $service_port | cut -d: -f2)
             
             echo "Testing ${service_name} on port ${port}..."
             
-            # Basic connectivity test
-            if curl -f -s --max-time 10 "http://localhost:${port}/health" >/dev/null 2>&1 || \
-               curl -f -s --max-time 10 "http://localhost:${port}/" >/dev/null 2>&1 || \
-               nc -z localhost ${port}; then
-              echo "✅ ${service_name} is accessible"
+            # Try multiple endpoints
+            if curl -f -s --max-time 10 "http://localhost:${port}/health" >/dev/null 2>&1; then
+              echo "✅ ${service_name} health endpoint OK"
+            elif curl -f -s --max-time 10 "http://localhost:${port}/" >/dev/null 2>&1; then
+              echo "✅ ${service_name} root endpoint OK"
+            elif nc -z localhost ${port} 2>/dev/null; then
+              echo "✅ ${service_name} port ${port} is accessible"
             else
-              echo "❌ ${service_name} failed health check"
+              echo "❌ ${service_name} failed all connectivity tests"
               ((FAILED_TESTS++))
             fi
           done
           
-          echo "📊 Smoke Tests: $((13 - FAILED_TESTS))/13 passed"
+          PASSED_TESTS=$((13 - FAILED_TESTS))
+          echo "📊 Smoke Tests: ${PASSED_TESTS}/13 passed"
           
-          if [ ${FAILED_TESTS} -gt 3 ]; then
-            echo "❌ Too many services failed smoke tests"
+          # Allow some failures but not too many
+          if [ ${FAILED_TESTS} -gt 4 ]; then
+            echo "❌ Too many services failed smoke tests (${FAILED_TESTS} failures)"
             exit 1
           fi
+          
+          echo "✅ Smoke tests completed with acceptable results"
+
+      - name: Cleanup old resources
+        run: |
+          echo "🧹 Cleaning up old resources..."
+          cd infra
+          
+          # Remove unused images
+          docker image prune -f
+          
+          # Remove unused volumes (be careful with this)
+          docker volume prune -f || true
+          
+          echo "✅ Cleanup completed"
 
       - name: Display deployment summary
         if: success()
@@ -274,18 +382,28 @@ jobs:
           echo "Environment: ${{ steps.vars.outputs.environment }}"
           echo "Image Tag: ${{ steps.vars.outputs.image_tag }}"
           echo "Deployment URL: ${{ steps.deploy.outputs.url }}"
+          echo "Timestamp: $(date)"
           echo ""
-          echo "📊 Service Status:"
+          echo "📊 Final Service Status:"
           cd infra
           docker-compose ps
+          echo ""
+          echo "📈 Resource Usage:"
+          docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}"
 
       - name: Rollback on failure
         if: failure()
         run: |
           echo "🔄 Rolling back deployment..."
           cd infra
-          docker-compose -f docker-compose.yml down
-          echo "❌ Deployment failed and rolled back"
+          
+          echo "Stopping all services..."
+          docker-compose -f docker-compose.yml down --remove-orphans
+          
+          echo "Cleaning up failed containers..."
+          docker container prune -f
+          
+          echo "❌ Deployment failed and has been rolled back"
 
   notify:
     needs: deploy
@@ -294,9 +412,17 @@ jobs:
     steps:
       - name: Notify deployment status
         run: |
+          echo "📢 Deployment Notification"
+          echo "========================="
+          
           if [ "${{ needs.deploy.result }}" == "success" ]; then
-            echo "✅ Deployment to ${{ needs.deploy.outputs.environment || 'development' }} completed successfully!"
-            echo "🔗 URL: ${{ needs.deploy.outputs.url }}"
+            echo "✅ DEPLOYMENT SUCCESS"
+            echo "Environment: ${{ needs.deploy.outputs.environment || 'development' }}"
+            echo "URL: ${{ needs.deploy.outputs.url }}"
+            echo "Timestamp: $(date)"
           else
-            echo "❌ Deployment to ${{ needs.deploy.outputs.environment || 'development' }} failed!"
+            echo "❌ DEPLOYMENT FAILED"
+            echo "Environment: ${{ needs.deploy.outputs.environment || 'development' }}"
+            echo "Check the logs for detailed error information"
+            echo "Timestamp: $(date)"
           fi

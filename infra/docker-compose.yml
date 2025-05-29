@@ -301,7 +301,7 @@ services:
       SMTP_PASSWORD: bbkk bkzy ctio fkrw
       SMTP_HOST: ashritha.amigo@gmail.com
       SMTP_PORT: 587
-      SMTP_IS_SECURE: true 
+      SMTP_IS_SECURE: "true" 
 
       KAFKA_BROKERS: 'kafka:9092'
       KAFKA_GROUP_ID: 'user-service-group'
