@@ -94,7 +94,7 @@ jobs:
               current_tag=$(echo "$current_versions" | jq -r ".\"$service\" // \"latest\"")
               echo "No new version, checking current deployed version: $current_tag"
               
-              if [[ "$current_tag" != "latest" ]] && docker manifest inspect ashritha07/${service}:${current_tag} > /dev/null 2>&1; then
+              if [[ "$current_tag" != "latest" ]] && [[ "$current_tag" != "null" ]] && docker manifest inspect ashritha07/${service}:${current_tag} > /dev/null 2>&1; then
                 echo "✓ Using current deployed version: $current_tag"
                 service_tag="$current_tag"
               elif docker manifest inspect ashritha07/${service}:latest > /dev/null 2>&1; then
@@ -106,22 +106,31 @@ jobs:
               fi
             fi
             
-            # Add to compose override
-            cat >> infra/docker-compose.override.yml << EOF
+            # Only add to compose override if we have a valid tag
+            if [[ -n "$service_tag" ]]; then
+              cat >> infra/docker-compose.override.yml << EOF
           ${service}:
             image: ashritha07/${service}:${service_tag}
           EOF
-            
-            # Add to new versions tracking
-            if [[ $first == true ]]; then
-              first=false
-            else
-              echo ',' >> infra/new-versions.json
+              
+              # Add to new versions tracking
+              if [[ $first == true ]]; then
+                first=false
+              else
+                echo ',' >> infra/new-versions.json
+              fi
+              echo "  \"$service\": \"$service_tag\"" >> infra/new-versions.json
             fi
-            echo "  \"$service\": \"$service_tag\"" >> infra/new-versions.json
           done
           
           echo '}' >> infra/new-versions.json
+          
+          # Check if we have any services in the override file
+          service_count=$(grep -c "image:" infra/docker-compose.override.yml || echo "0")
+          if [[ "$service_count" -eq 0 ]]; then
+            echo "❌ No valid services found to deploy!"
+            exit 1
+          fi
           
           echo ""
           echo "Generated docker-compose.override.yml:"
