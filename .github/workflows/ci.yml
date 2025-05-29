@@ -93,27 +93,27 @@ jobs:
       - name: Check if service changed
         id: check-changes
         run: |
+
+          SERVICE_OUTPUT="${{ matrix.service }}"
+          SERVICE_CHANGED=$(echo '${{ toJson(needs.changes.outputs) }}' | jq -r --arg service "$SERVICE_OUTPUT" '.[$service]')
+          
+          # Validate the result
+          if [[ "$SERVICE_CHANGED" == "null" ]] || [[ -z "$SERVICE_CHANGED" ]]; then
+            echo "⚠️ Warning: Could not determine change status for $SERVICE_OUTPUT"
+            SERVICE_CHANGED="false"
+          fi
+          
+          if [[ "$SERVICE_CHANGED" == "true" ]] || [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "🔄 Building ${{ matrix.service }} (changed: $SERVICE_CHANGED)"
+          else
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "⏭️ Skipping ${{ matrix.service }} (no changes)"
+          fi
+
           # TEMPORARY: Always build all services for initial setup
-          echo "changed=true" >> $GITHUB_OUTPUT
-          echo "🔄 Force building ${{ matrix.service }} for initial setup"
-
-
-        # SERVICE_OUTPUT="${{ matrix.service }}"
-          # SERVICE_CHANGED=$(echo '${{ toJson(needs.changes.outputs) }}' | jq -r --arg service "$SERVICE_OUTPUT" '.[$service]')
-          
-          # # Validate the result
-          # if [[ "$SERVICE_CHANGED" == "null" ]] || [[ -z "$SERVICE_CHANGED" ]]; then
-          #   echo "⚠️ Warning: Could not determine change status for $SERVICE_OUTPUT"
-          #   SERVICE_CHANGED="false"
-          # fi
-          
-          # if [[ "$SERVICE_CHANGED" == "true" ]] || [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-          #   echo "changed=true" >> $GITHUB_OUTPUT
-          #   echo "🔄 Building ${{ matrix.service }} (changed: $SERVICE_CHANGED)"
-          # else
-          #   echo "changed=false" >> $GITHUB_OUTPUT
-          #   echo "⏭️ Skipping ${{ matrix.service }} (no changes)"
-          # fi
+          # echo "changed=true" >> $GITHUB_OUTPUT
+          # echo "🔄 Force building ${{ matrix.service }} for initial setup"
 
       - name: Set up Docker Buildx
         if: steps.check-changes.outputs.changed == 'true'

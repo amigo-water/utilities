@@ -8,7 +8,8 @@ on:
     types: [completed]
   workflow_dispatch:
 
-# Removed IMAGE_TAG - will use latest by default
+env:
+  IMAGE_TAG: main-${{ github.sha }}
 
 jobs:
   deploy:
@@ -19,10 +20,21 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Debug IMAGE_TAG
+        run: |
+          echo "=== IMAGE_TAG DEBUG ==="
+          echo "IMAGE_TAG from env: ${{ env.IMAGE_TAG }}"
+          echo "GitHub SHA: ${{ github.sha }}"
+          echo "GitHub SHA (first 7 chars): ${GITHUB_SHA:0:7}"
+          echo "Expected full format: main-${{ github.sha }}"
+          echo "Expected short format: main-${GITHUB_SHA:0:7}"
+          echo "======================="
+
       - name: Create environment file
         run: |
           cd infra
           cat > .env << EOF
+          IMAGE_TAG=${{ env.IMAGE_TAG }}
           POSTGRES_USER=postgres
           POSTGRES_PASSWORD=root
           POSTGRES_DB=utility_services
@@ -30,6 +42,10 @@ jobs:
           KAFKA_BOOTSTRAP_SERVERS=kafka:9092
           ZOOKEEPER_CONNECT=zookeeper:2181
           EOF
+          
+          echo "=== ENVIRONMENT FILE DEBUG ==="
+          cat .env
+          echo "=============================="
 
       - name: Stop existing containers
         run: |
@@ -58,7 +74,13 @@ jobs:
       - name: Check services are running
         run: |
           cd infra
+          echo "=== DOCKER COMPOSE PS ==="
           docker-compose ps
+          echo "========================="
+          
+          echo "=== RUNNING CONTAINERS WITH IMAGES ==="
+          docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Status}}"
+          echo "======================================="
           
           # Simple check - are containers running?
           RUNNING=$(docker ps --filter "status=running" | wc -l)
