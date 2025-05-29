@@ -8,8 +8,7 @@ on:
     types: [completed]
   workflow_dispatch:
 
-env:
-  IMAGE_TAG: ${{ github.sha }}
+# Removed IMAGE_TAG - will use latest by default
 
 jobs:
   deploy:
@@ -24,7 +23,6 @@ jobs:
         run: |
           cd infra
           cat > .env << EOF
-          IMAGE_TAG=${{ env.IMAGE_TAG }}
           POSTGRES_USER=postgres
           POSTGRES_PASSWORD=root
           POSTGRES_DB=utility_services
