@@ -166,54 +166,54 @@ jobs:
           SERVICE_CHANGED=$(echo '${{ toJson(needs.changes.outputs) }}' | jq -r --arg service "${{ matrix.service }}" '.[$service]')
           echo "Service changed: $SERVICE_CHANGED"
 
-  security-scan:
-    needs: [changes, build-and-push]
-    runs-on: self-hosted
-    strategy:
-      fail-fast: false
-      matrix:
-        service: [
-          analytics-reporting-service,
-          billing-service,
-          collection-management-service,
-          consumer-service,
-          customer-support-service,
-          gis-location-management-service,
-          meter-management-inventory-service,
-          notification-communication-service,
-          policy-management-service,
-          third-party-integration-gateway-service,
-          user-identity-access-management-service,
-          user-service,
-          workflow-approval-service
-        ]
-    steps:
-      - name: Check if service changed
-        id: check-changes
-        run: |
-          SERVICE_CHANGED=$(echo '${{ toJson(needs.changes.outputs) }}' | jq -r --arg service "${{ matrix.service }}" '.[$service]')
+  # security-scan:
+  #   needs: [changes, build-and-push]
+  #   runs-on: self-hosted
+  #   strategy:
+  #     fail-fast: false
+  #     matrix:
+  #       service: [
+  #         analytics-reporting-service,
+  #         billing-service,
+  #         collection-management-service,
+  #         consumer-service,
+  #         customer-support-service,
+  #         gis-location-management-service,
+  #         meter-management-inventory-service,
+  #         notification-communication-service,
+  #         policy-management-service,
+  #         third-party-integration-gateway-service,
+  #         user-identity-access-management-service,
+  #         user-service,
+  #         workflow-approval-service
+  #       ]
+  #   steps:
+  #     - name: Check if service changed
+  #       id: check-changes
+  #       run: |
+  #         SERVICE_CHANGED=$(echo '${{ toJson(needs.changes.outputs) }}' | jq -r --arg service "${{ matrix.service }}" '.[$service]')
           
-          if [[ "$SERVICE_CHANGED" == "true" ]] || [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "changed=true" >> $GITHUB_OUTPUT
-            echo "🔍 Scanning ${{ matrix.service }}"
-          else
-            echo "changed=false" >> $GITHUB_OUTPUT
-            echo "⏭️ Skipping security scan for ${{ matrix.service }}"
-          fi
+  #         if [[ "$SERVICE_CHANGED" == "true" ]] || [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+  #           echo "changed=true" >> $GITHUB_OUTPUT
+  #           echo "🔍 Scanning ${{ matrix.service }}"
+  #         else
+  #           echo "changed=false" >> $GITHUB_OUTPUT
+  #           echo "⏭️ Skipping security scan for ${{ matrix.service }}"
+  #         fi
 
-      - name: Run Trivy vulnerability scanner
-        if: steps.check-changes.outputs.changed == 'true'
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: docker.io/ashritha07/${{ matrix.service }}:${{ github.sha }}
-          format: 'sarif'
-          output: 'trivy-results-${{ matrix.service }}.sarif'
+  #     - name: Run Trivy vulnerability scanner
+  #       if: steps.check-changes.outputs.changed == 'true'
+  #       uses: aquasecurity/trivy-action@master
+  #       with:
+  #         image-ref: docker.io/ashritha07/${{ matrix.service }}:${{ github.sha }}
+  #         format: 'sarif'
+  #         output: 'trivy-results-${{ matrix.service }}.sarif'
 
-      - name: Upload Trivy scan results
-        if: steps.check-changes.outputs.changed == 'true'
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: 'trivy-results-${{ matrix.service }}.sarif'
+  #     - name: Upload Trivy scan results
+  #       if: steps.check-changes.outputs.changed == 'true'
+  #       uses: github/codeql-action/upload-sarif@v3
+  #       with:
+  #         sarif_file: 'trivy-results-${{ matrix.service }}.sarif'
 
   notify-success:
     needs: [build-and-push]
