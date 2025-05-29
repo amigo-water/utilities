@@ -42,20 +42,41 @@ jobs:
           echo "IMAGE_TAG=${SHORT_SHA}" >> $GITHUB_OUTPUT
           echo "IMAGE_TAG=${SHORT_SHA}" >> $GITHUB_ENV
 
+      - name: Check if images exist with SHA tag
+        id: check-images
+        run: |
+          SHORT_SHA="${{ steps.get_sha.outputs.IMAGE_TAG }}"
+          
+          echo "🔍 Checking if images exist with SHA: ${SHORT_SHA}"
+          
+          # Test if any image exists with this SHA tag
+          # We'll check one service as a representative
+          if docker manifest inspect ashritha07/analytics-reporting-service:${SHORT_SHA} > /dev/null 2>&1; then
+            echo "✅ Images with SHA ${SHORT_SHA} found"
+            echo "use_sha_tag=true" >> $GITHUB_OUTPUT
+            echo "IMAGE_TAG=${SHORT_SHA}" >> $GITHUB_ENV
+          else
+            echo "⚠️ No images found with SHA ${SHORT_SHA}, using latest tags"
+            echo "use_sha_tag=false" >> $GITHUB_OUTPUT
+            echo "IMAGE_TAG=latest" >> $GITHUB_ENV
+          fi
+
       - name: Deploy services
         run: |
           cd infra
-          echo "🚀 Deploying with SHA tag: ${{ steps.get_sha.outputs.IMAGE_TAG }}"
           
-          # Try to pull images with the specific SHA tag
-          # If a service wasn't built (no changes), it will fall back to 'latest'
-          docker-compose pull || echo "⚠️ Some images may not exist with this SHA, will use fallback tags"
+          if [[ "${{ steps.check-images.outputs.use_sha_tag }}" == "true" ]]; then
+            echo "🚀 Deploying with SHA tag: ${{ steps.get_sha.outputs.IMAGE_TAG }}"
+          else
+            echo "🚀 Deploying with latest tags (no new builds for this commit)"
+          fi
           
-          # Deploy
+          # Pull and deploy
+          docker-compose pull
           docker-compose down
           docker-compose up -d
           
-          echo "✅ Deployment completed"
+          echo "✅ Deployment completed with tag: ${IMAGE_TAG}"
 
       - name: Verify deployment
         run: |
@@ -69,5 +90,9 @@ jobs:
       - name: Deployment summary
         run: |
           echo "## 🎉 Deployment Summary" >> $GITHUB_STEP_SUMMARY
-          echo "- **SHA Tag:** ${{ steps.get_sha.outputs.IMAGE_TAG }}" >> $GITHUB_STEP_SUMMARY
+          if [[ "${{ steps.check-images.outputs.use_sha_tag }}" == "true" ]]; then
+            echo "- **Tag Used:** ${{ steps.get_sha.outputs.IMAGE_TAG }} (New build)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- **Tag Used:** latest (No changes, reusing existing images)" >> $GITHUB_STEP_SUMMARY
+          fi
           echo "- **Status:** ✅ Successful" >> $GITHUB_STEP_SUMMARY
