@@ -10,7 +10,7 @@ on:
 
 env:
   REGISTRY: docker.io
-  IMAGE_TAG: ${{ github.sha }}
+  IMAGE_TAG: main-${{ github.sha }}
 
 jobs:
   changes:
@@ -93,7 +93,6 @@ jobs:
       - name: Check if service changed
         id: check-changes
         run: |
-
           SERVICE_OUTPUT="${{ matrix.service }}"
           SERVICE_CHANGED=$(echo '${{ toJson(needs.changes.outputs) }}' | jq -r --arg service "$SERVICE_OUTPUT" '.[$service]')
           
@@ -111,10 +110,6 @@ jobs:
             echo "⏭️ Skipping ${{ matrix.service }} (no changes)"
           fi
 
-          # TEMPORARY: Always build all services for initial setup
-          # echo "changed=true" >> $GITHUB_OUTPUT
-          # echo "🔄 Force building ${{ matrix.service }} for initial setup"
-
       - name: Set up Docker Buildx
         if: steps.check-changes.outputs.changed == 'true'
         uses: docker/setup-buildx-action@v3
@@ -130,19 +125,7 @@ jobs:
         if: steps.check-changes.outputs.changed == 'true'
         run: docker info
 
-      - name: Extract metadata
-        if: steps.check-changes.outputs.changed == 'true'
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: docker.io/ashritha07/${{ matrix.service }}
-          tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=sha,prefix={{branch}}-
-            type=raw,value=latest,enable={{is_default_branch}}
-
-      - name: Build and push Docker image
+      - name: Build and push Docker image with simple tagging
         if: steps.check-changes.outputs.changed == 'true'
         id: build
         uses: docker/build-push-action@v5
@@ -150,8 +133,9 @@ jobs:
           context: .
           file: ./services/${{ matrix.service }}/Dockerfile
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: |
+            docker.io/ashritha07/${{ matrix.service }}:${{ env.IMAGE_TAG }}
+            docker.io/ashritha07/${{ matrix.service }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64
@@ -161,64 +145,16 @@ jobs:
         run: |
           echo "## 🐳 Built ${{ matrix.service }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Image:** docker.io/ashritha07/${{ matrix.service }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Tags:** ${{ steps.meta.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tags:** ${{ env.IMAGE_TAG }}, latest" >> $GITHUB_STEP_SUMMARY
           echo "- **Digest:** ${{ steps.build.outputs.digest }}" >> $GITHUB_STEP_SUMMARY
 
       - name: Debug information
         run: |
           echo "Service: ${{ matrix.service }}"
+          echo "IMAGE_TAG: ${{ env.IMAGE_TAG }}"
           echo "All outputs: ${{ toJson(needs.changes.outputs) }}"
           SERVICE_CHANGED=$(echo '${{ toJson(needs.changes.outputs) }}' | jq -r --arg service "${{ matrix.service }}" '.[$service]')
           echo "Service changed: $SERVICE_CHANGED"
-
-  # security-scan:
-  #   needs: [changes, build-and-push]
-  #   runs-on: self-hosted
-  #   strategy:
-  #     fail-fast: false
-  #     matrix:
-  #       service: [
-  #         analytics-reporting-service,
-  #         billing-service,
-  #         collection-management-service,
-  #         consumer-service,
-  #         customer-support-service,
-  #         gis-location-management-service,
-  #         meter-management-inventory-service,
-  #         notification-communication-service,
-  #         policy-management-service,
-  #         third-party-integration-gateway-service,
-  #         user-identity-access-management-service,
-  #         user-service,
-  #         workflow-approval-service
-  #       ]
-  #   steps:
-  #     - name: Check if service changed
-  #       id: check-changes
-  #       run: |
-  #         SERVICE_CHANGED=$(echo '${{ toJson(needs.changes.outputs) }}' | jq -r --arg service "${{ matrix.service }}" '.[$service]')
-          
-  #         if [[ "$SERVICE_CHANGED" == "true" ]] || [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-  #           echo "changed=true" >> $GITHUB_OUTPUT
-  #           echo "🔍 Scanning ${{ matrix.service }}"
-  #         else
-  #           echo "changed=false" >> $GITHUB_OUTPUT
-  #           echo "⏭️ Skipping security scan for ${{ matrix.service }}"
-  #         fi
-
-  #     - name: Run Trivy vulnerability scanner
-  #       if: steps.check-changes.outputs.changed == 'true'
-  #       uses: aquasecurity/trivy-action@master
-  #       with:
-  #         image-ref: docker.io/ashritha07/${{ matrix.service }}:${{ github.sha }}
-  #         format: 'sarif'
-  #         output: 'trivy-results-${{ matrix.service }}.sarif'
-
-  #     - name: Upload Trivy scan results
-  #       if: steps.check-changes.outputs.changed == 'true'
-  #       uses: github/codeql-action/upload-sarif@v3
-  #       with:
-  #         sarif_file: 'trivy-results-${{ matrix.service }}.sarif'
 
   notify-success:
     needs: [build-and-push]
