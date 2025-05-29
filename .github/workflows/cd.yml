@@ -102,14 +102,19 @@ jobs:
           
           # Show logs for any failed services
           echo "Checking for failed services..."
-          failed_services=$(docker-compose ps --services --filter "status=exited")
-          if [[ ! -z "$failed_services" ]]; then
-            echo "Failed services detected: $failed_services"
-            for service in $failed_services; do
-              echo "=== Logs for $service ==="
-              docker-compose logs --tail=20 $service
-            done
+          
+          # Check if any services have exited
+          if docker-compose ps | grep -q "Exit"; then
+            echo "❌ Some services have exited!"
+            echo "Failed services:"
+            docker-compose ps | grep "Exit"
+            
+            # Show logs for services that aren't running
+            echo "=== Logs for failed services ==="
+            docker-compose logs --tail=20
             exit 1
+          else
+            echo "✅ All services are running successfully!"
           fi
           
       - name: Cleanup
