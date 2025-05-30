@@ -306,6 +306,9 @@ services:
       KAFKA_BROKERS: 'kafka:9092'
       KAFKA_GROUP_ID: 'user-service-group'
       KAFKA_CLIENT_ID: 'user-service'
+      INFINITO_CLIENT_ID: 'amigoinfwaz3zf16xa4hxs1c'
+      INFINITO_CLIENT_PASSWORD: 'z8ffuy1jjujh8pq8rhcoy7s2159o868o'
+      INFINITO_FROM_NUMBER: '919000347979'
     depends_on:
       postgres:
         condition: service_healthy
