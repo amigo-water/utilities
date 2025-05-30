@@ -6,6 +6,7 @@ import twilio from "twilio";
 import bcrypt from "bcryptjs";
 import * as jwt from "jsonwebtoken";
 import { KafkaService } from '../services/kafka.service';
+import { messagingService } from '../services/messaging.service';
 
 
 // Extend Express Request type to include user property
@@ -87,11 +88,8 @@ export class UserController {
   }
 
   private async sendOTPPhone(phone: string, otp: string): Promise<void> {
-    await this.twilioClient.messages.create({
-      body: `Your verification OTP is: ${otp}. This OTP will expire in 5 minutes.`,
-      to: phone,
-      from: process.env.TWILIO_PHONE_NUMBER,
-    });
+    await messagingService.sendOTP(phone, otp, 'whatsapp');
+    await messagingService.sendOTP(phone, otp, 'sms');
   }
 
   private async validateOTP(identifier: string, otp: string): Promise<boolean> {
@@ -366,6 +364,27 @@ export class UserController {
             created_at: user.createdAt,
           }
         });
+      }else if(type === "phone"){
+        console.log("Generating OTP for phone-based login");
+        const otp = this.generateOTP();
+        console.log("Generated OTP:", otp);
+        this.storeOTP(identifier, otp);
+        await this.sendOTPPhone(identifier, otp);
+        
+        return res.status(200).json({
+          message: "OTP sent successfully",
+          user: {
+            user_id: user.user_id,
+            username: user.username,
+            name: user.name,
+            role: user.role,
+            utility_id: user.utility_id,
+            contact_info: user.contact_info,
+            status: user.status,
+            created_at: user.createdAt,
+          }
+        });
+
       }
 
       
