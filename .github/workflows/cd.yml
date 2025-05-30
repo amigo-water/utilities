@@ -205,10 +205,10 @@ jobs:
           # Deploy databases if changed
           if [[ "${{ needs.detect-changes.outputs.databases }}" == "true" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             echo "📦 Pulling and restarting databases..."
-            docker-compose pull postgres mysql redis
-            docker-compose stop postgres mysql redis
-            docker-compose rm -f postgres mysql redis
-            docker-compose up -d postgres mysql redis
+            docker-compose pull postgres
+            docker-compose stop postgres
+            docker-compose rm -f postgres
+            docker-compose up -d postgres
             sleep 20
             echo "✅ Database services restarted"
           fi
