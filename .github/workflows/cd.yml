@@ -17,7 +17,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Get SHA and set IMAGE_TAG
+      - name: Get SHA for tracking
         id: get_sha
         run: |
           if [[ "${{ github.event_name }}" == "workflow_run" ]]; then
@@ -27,135 +27,29 @@ jobs:
           fi
           
           SHORT_SHA=$(echo ${ACTUAL_SHA} | cut -c1-8)
-          echo "IMAGE_TAG=${SHORT_SHA}" >> $GITHUB_OUTPUT
-          echo "IMAGE_TAG=${SHORT_SHA}" >> $GITHUB_ENV
+          echo "SHORT_SHA=${SHORT_SHA}" >> $GITHUB_OUTPUT
+          echo "Deploying with SHA: ${SHORT_SHA}"
 
-      - name: Get currently deployed versions
-        id: current-versions
+      - name: Deploy services
         run: |
           cd infra
           
-          # Create versions file if it doesn't exist
-          if [[ ! -f deployed-versions.json ]]; then
-            echo '{}' > deployed-versions.json
-          fi
+          # Set IMAGE_TAG to latest so docker-compose uses :latest tags
+          export IMAGE_TAG=latest
           
-          # Read current deployed versions
-          echo "Current deployed versions:"
-          cat deployed-versions.json
-          echo ""
-
-      - name: Check available images and create deployment plan
-        id: check-images
-        run: |
-          SHORT_SHA="${{ steps.get_sha.outputs.IMAGE_TAG }}"
+          echo "Pulling latest images..."
+          docker-compose pull
           
-          # List of all your services
-          services=(
-            "user-identity-access-management-service"
-            "policy-management-service" 
-            "user-service"
-            "consumer-service"
-            "customer-support-service"
-            "third-party-integration-gateway-service"
-            "meter-management-inventory-service"
-            "billing-service"
-            "gis-location-management-service"
-            "notification-communication-service"
-            "collection-management-service"
-            "analytics-reporting-service"
-            "workflow-approval-service"
-          )
-          
-          # Read current versions
-          current_versions=$(cat infra/deployed-versions.json)
-          
-          # Create a temporary compose override file
-          cat > infra/docker-compose.override.yml << 'EOF'
-          version: '3.8'
-          services:
-          EOF
-          
-          # Create new versions tracking
-          echo '{' > infra/new-versions.json
-          first=true
-          
-          # Check each service and set appropriate tag
-          for service in "${services[@]}"; do
-            echo "Checking service: $service"
-            service_tag=""
-            
-            # First, check if new SHA version exists
-            if docker manifest inspect ashritha07/${service}:${SHORT_SHA} > /dev/null 2>&1; then
-              echo "✓ Found new SHA tag for $service: ${SHORT_SHA}"
-              service_tag="${SHORT_SHA}"
-            else
-              # Get currently deployed version for this service
-              current_tag=$(echo "$current_versions" | jq -r ".\"$service\" // \"latest\"")
-              echo "No new version, checking current deployed version: $current_tag"
-              
-              if [[ "$current_tag" != "latest" ]] && [[ "$current_tag" != "null" ]] && docker manifest inspect ashritha07/${service}:${current_tag} > /dev/null 2>&1; then
-                echo "✓ Using current deployed version: $current_tag"
-                service_tag="$current_tag"
-              elif docker manifest inspect ashritha07/${service}:latest > /dev/null 2>&1; then
-                echo "⚠️ Falling back to latest for $service"
-                service_tag="latest"
-              else
-                echo "❌ No image found for $service, skipping..."
-                continue
-              fi
-            fi
-            
-            # Only add to compose override if we have a valid tag
-            if [[ -n "$service_tag" ]]; then
-              cat >> infra/docker-compose.override.yml << EOF
-          ${service}:
-            image: ashritha07/${service}:${service_tag}
-          EOF
-              
-              # Add to new versions tracking
-              if [[ $first == true ]]; then
-                first=false
-              else
-                echo ',' >> infra/new-versions.json
-              fi
-              echo "  \"$service\": \"$service_tag\"" >> infra/new-versions.json
-            fi
-          done
-          
-          echo '}' >> infra/new-versions.json
-          
-          # Check if we have any services in the override file
-          service_count=$(grep -c "image:" infra/docker-compose.override.yml || echo "0")
-          if [[ "$service_count" -eq 0 ]]; then
-            echo "❌ No valid services found to deploy!"
-            exit 1
-          fi
-          
-          echo ""
-          echo "Generated docker-compose.override.yml:"
-          cat infra/docker-compose.override.yml
-          echo ""
-          echo "New versions to deploy:"
-          cat infra/new-versions.json
-
-      - name: Deploy
-        run: |
-          cd infra
-          
-          # Pull only available images (ignore failures)
-          echo "Pulling available images..."
-          docker-compose pull --ignore-pull-failures || true
-          
-          # Stop existing containers
+          echo "Stopping existing containers..."
           docker-compose down
           
-          # Start services
-          echo "Starting services..."
+          echo "Starting services with latest images..."
           docker-compose up -d
           
-          # Wait and check status
+          # Wait for services to start
           sleep 15
+          
+          echo "Checking service status..."
           docker-compose ps
           
           # Check if any services have exited
@@ -164,235 +58,32 @@ jobs:
             echo "Failed services:"
             docker-compose ps | grep "Exit"
             echo "=== Recent logs ==="
-            docker-compose logs --tail=20
+            docker-compose logs --tail=50
             exit 1
           else
             echo "✅ All services are running successfully!"
           fi
 
-      - name: Update deployed versions tracking
+      - name: Update deployment tracking
         if: success()
         run: |
           cd infra
-          # Replace the old versions with new versionsname: CD - Deploy to Environment
-
-on:
-  workflow_run:
-    workflows: ["CI - Build and Push Images"]
-    types:
-      - completed
-    branches: [main]
-  workflow_dispatch:
-
-jobs:
-  deploy:
-    runs-on: self-hosted
-    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Get SHA and set IMAGE_TAG
-        id: get_sha
-        run: |
-          if [[ "${{ github.event_name }}" == "workflow_run" ]]; then
-            ACTUAL_SHA="${{ github.event.workflow_run.head_sha }}"
-          else
-            ACTUAL_SHA="${{ github.sha }}"
-          fi
+          SHORT_SHA="${{ steps.get_sha.outputs.SHORT_SHA }}"
           
-          SHORT_SHA=$(echo ${ACTUAL_SHA} | cut -c1-8)
-          echo "IMAGE_TAG=${SHORT_SHA}" >> $GITHUB_OUTPUT
-          echo "IMAGE_TAG=${SHORT_SHA}" >> $GITHUB_ENV
-
-      - name: Get currently deployed versions
-        id: current-versions
-        run: |
-          cd infra
+          # Create simple deployment log
+          echo "{" > deployed-info.json
+          echo "  \"deployed_at\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"," >> deployed-info.json
+          echo "  \"commit_sha\": \"${{ github.sha }}\"," >> deployed-info.json
+          echo "  \"short_sha\": \"${SHORT_SHA}\"," >> deployed-info.json
+          echo "  \"workflow_run_id\": \"${{ github.run_id }}\"" >> deployed-info.json
+          echo "}" >> deployed-info.json
           
-          # Create versions file if it doesn't exist
-          if [[ ! -f deployed-versions.json ]]; then
-            echo '{}' > deployed-versions.json
-          fi
+          echo "Deployment completed at $(date) for SHA: ${SHORT_SHA}"
+          cat deployed-info.json
           
-          # Read current deployed versions
-          echo "Current deployed versions:"
-          cat deployed-versions.json
-          echo ""
-
-      - name: Check available images and create deployment plan
-        id: check-images
-        run: |
-          SHORT_SHA="${{ steps.get_sha.outputs.IMAGE_TAG }}"
-          
-          # List of all your services
-          services=(
-            "user-identity-access-management-service"
-            "policy-management-service" 
-            "user-service"
-            "consumer-service"
-            "customer-support-service"
-            "third-party-integration-gateway-service"
-            "meter-management-inventory-service"
-            "billing-service"
-            "gis-location-management-service"
-            "notification-communication-service"
-            "collection-management-service"
-            "analytics-reporting-service"
-            "workflow-approval-service"
-          )
-          
-          # Read current versions
-          current_versions=$(cat infra/deployed-versions.json)
-          
-          # Initialize the override file with proper YAML structure
-          cat > infra/docker-compose.override.yml << 'EOF'
-          version: '3.8'
-          services:
-          EOF
-          
-          # Create new versions tracking
-          new_versions_temp=$(mktemp)
-          echo '{' > "$new_versions_temp"
-          first=true
-          services_added=false
-          
-          # Check each service and set appropriate tag
-          for service in "${services[@]}"; do
-            echo "Checking service: $service"
-            service_tag=""
-            
-            # First, check if new SHA version exists
-            if docker manifest inspect ashritha07/${service}:${SHORT_SHA} > /dev/null 2>&1; then
-              echo "✓ Found new SHA tag for $service: ${SHORT_SHA}"
-              service_tag="${SHORT_SHA}"
-            else
-              # Get currently deployed version for this service
-              current_tag=$(echo "$current_versions" | jq -r ".\"$service\" // \"latest\"")
-              echo "No new version, checking current deployed version: $current_tag"
-              
-              if [[ "$current_tag" != "latest" ]] && [[ "$current_tag" != "null" ]] && docker manifest inspect ashritha07/${service}:${current_tag} > /dev/null 2>&1; then
-                echo "✓ Using current deployed version: $current_tag"
-                service_tag="$current_tag"
-              elif docker manifest inspect ashritha07/${service}:latest > /dev/null 2>&1; then
-                echo "⚠️ Falling back to latest for $service"
-                service_tag="latest"
-              else
-                echo "❌ No image found for $service, skipping..."
-                continue
-              fi
-            fi
-            
-            # Only add to compose override if we have a valid tag
-            if [[ -n "$service_tag" ]]; then
-              # Add proper YAML indentation for service
-              cat >> infra/docker-compose.override.yml << EOF
-            ${service}:
-              image: ashritha07/${service}:${service_tag}
-          EOF
-              
-              # Add to new versions tracking
-              if [[ $first == true ]]; then
-                first=false
-              else
-                echo ',' >> "$new_versions_temp"
-              fi
-              echo "    \"$service\": \"$service_tag\"" >> "$new_versions_temp"
-              services_added=true
-            fi
-          done
-          
-          echo '}' >> "$new_versions_temp"
-          mv "$new_versions_temp" infra/new-versions.json
-          
-          # Check if we have any services to deploy
-          if [[ "$services_added" == false ]]; then
-            echo "❌ No valid services found to deploy!"
-            # Create empty override file to prevent errors
-            cat > infra/docker-compose.override.yml << 'EOF'
-          version: '3.8'
-          services: {}
-          EOF
-            exit 1
-          fi
-          
-          echo ""
-          echo "Generated docker-compose.override.yml:"
-          cat infra/docker-compose.override.yml
-          echo ""
-          echo "New versions to deploy:"
-          cat infra/new-versions.json
-
-      - name: Deploy
-        run: |
-          cd infra
-          
-          # Pull only available images (ignore failures)
-          echo "Pulling available images..."
-          docker-compose pull --ignore-pull-failures || true
-          
-          # Stop existing containers
-          docker-compose down
-          
-          # Start services
-          echo "Starting services..."
-          docker-compose up -d
-          
-          # Wait and check status
-          sleep 15
-          docker-compose ps
-          
-          # Check if any services have exited
-          if docker-compose ps | grep -q "Exit"; then
-            echo "❌ Some services have exited!"
-            echo "Failed services:"
-            docker-compose ps | grep "Exit"
-            echo "=== Recent logs ==="
-            docker-compose logs --tail=20
-            exit 1
-          else
-            echo "✅ All services are running successfully!"
-          fi
-
-      - name: Update deployed versions tracking
-        if: success()
-        run: |
-          cd infra
-          # Replace the old versions with new versions
-          mv new-versions.json deployed-versions.json
-          
-          echo "Updated deployed versions:"
-          cat deployed-versions.json
-          
-          # Commit the updated versions file
+          # Commit deployment info
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add deployed-versions.json
-          git commit -m "Update deployed service versions [skip ci]" || echo "No changes to commit"
+          git add deployed-info.json
+          git commit -m "Deploy SHA ${SHORT_SHA} [skip ci]" || echo "No changes to commit"
           git push || echo "Nothing to push"
-
-      - name: Cleanup
-        if: always()
-        run: |
-          # Clean up temporary files
-          rm -f infra/docker-compose.override.yml
-          rm -f infra/new-versions.json
-          mv new-versions.json deployed-versions.json
-          
-          echo "Updated deployed versions:"
-          cat deployed-versions.json
-          
-          # Commit the updated versions file
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add deployed-versions.json
-          git commit -m "Update deployed service versions [skip ci]" || echo "No changes to commit"
-          git push || echo "Nothing to push"
-
-      - name: Cleanup
-        if: always()
-        run: |
-          # Clean up temporary files
-          rm -f infra/docker-compose.override.yml
-          rm -f infra/new-versions.json
