@@ -14,9 +14,8 @@ jobs:
     if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
     outputs:
       short_sha: ${{ steps.set-sha.outputs.short_sha }}
-      kafka: ${{ steps.changes.outputs.kafka }}
-      databases: ${{ steps.changes.outputs.databases }}
-      matrix: ${{ steps.generate-matrix.outputs.matrix }}
+      changed_services: ${{ steps.changes.outputs.changed_services }}
+      infra_changed: ${{ steps.changes.outputs.infra }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -34,6 +33,7 @@ jobs:
         id: changes
         uses: dorny/paths-filter@v2
         with:
+          list-files: shell
           filters: |
             analytics-reporting-service: services/analytics-reporting-service/**
             billing-service: services/billing-service/**
@@ -48,91 +48,81 @@ jobs:
             user-identity-access-management-service: services/user-identity-access-management-service/**
             user-service: services/user-service/**
             workflow-approval-service: services/workflow-approval-service/**
-            kafka:
-              - infra/docker-compose.yml
-            databases:
-              - infra/docker-compose.yml
+            infra: infra/**
 
-      - name: Generate matrix
-        id: generate-matrix
+      - name: Build service list
+        id: build-list
         run: |
           SERVICES=(analytics-reporting-service billing-service collection-management-service consumer-service customer-support-service gis-location-management-service meter-management-inventory-service notification-communication-service policy-management-service third-party-integration-gateway-service user-identity-access-management-service user-service workflow-approval-service)
-
-          matrix=$(jq -n '{include: []}')
+          
+          CHANGED_SERVICES=""
           changes_json='${{ toJson(steps.changes.outputs) }}'
+          
+          # If manual trigger, deploy all services
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            CHANGED_SERVICES=$(printf "%s," "${SERVICES[@]}")
+            CHANGED_SERVICES=${CHANGED_SERVICES%,}  # Remove trailing comma
+          else
+            # Only include services that actually changed
+            for svc in "${SERVICES[@]}"; do
+              changed=$(echo "$changes_json" | jq -r --arg svc "$svc" '.[$svc]')
+              if [[ "$changed" == "true" ]]; then
+                CHANGED_SERVICES="$CHANGED_SERVICES$svc,"
+              fi
+            done
+            CHANGED_SERVICES=${CHANGED_SERVICES%,}  # Remove trailing comma
+          fi
+          
+          echo "changed_services=$CHANGED_SERVICES" >> $GITHUB_OUTPUT
+          echo "Services to deploy: $CHANGED_SERVICES"
 
-          for svc in "${SERVICES[@]}"; do
-            changed=$(echo "$changes_json" | jq -r --arg svc "$svc" '.[$svc]')
-            if [[ "$changed" == "true" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-              matrix=$(echo "$matrix" | jq --arg svc "$svc" '.include += [{"service": $svc}]')
-            fi
-          done
-          echo "matrix=$(echo $matrix | jq -c)" >> $GITHUB_OUTPUT
-
-  deploy:
+  deploy-services:
     needs: detect-changes
-    if: ${{ fromJson(needs.detect-changes.outputs.matrix).include != '' }}
+    if: ${{ needs.detect-changes.outputs.changed_services != '' }}
     runs-on: self-hosted
     strategy:
-      matrix: ${{ fromJson(needs.detect-changes.outputs.matrix) }}
+      matrix:
+        service: ${{ fromJson(format('["{0}"]', join(split(needs.detect-changes.outputs.changed_services, ','), '","'))) }}
       fail-fast: false
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Pull and redeploy service only if image changed
+      - name: Deploy service
         run: |
           SERVICE=${{ matrix.service }}
           IMAGE_NAME=ashritha07/$SERVICE:latest
-
-          echo "🔍 Checking image digest for $SERVICE..."
-
-          docker pull $IMAGE_NAME > /dev/null
-
-          LOCAL_DIGEST=$(docker images --digests --format '{{.Digest}}' $SERVICE | head -n 1 || echo "")
-          REMOTE_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' $IMAGE_NAME || echo "")
-
-          if [[ "$LOCAL_DIGEST" == "$REMOTE_DIGEST" && -n "$LOCAL_DIGEST" ]]; then
-            echo "✅ No change in image digest for $SERVICE, skipping restart"
-            exit 0
-          fi
-
-          echo "🔄 Image has changed or not running, redeploying $SERVICE..."
-
+          
+          echo "🔍 Pulling latest image for $SERVICE..."
+          docker pull $IMAGE_NAME
+          
+          echo "🔄 Redeploying $SERVICE..."
           cd infra
           export IMAGE_TAG=latest
-
+          
           docker-compose stop $SERVICE || true
           docker-compose rm -f $SERVICE || true
           docker-compose up -d $SERVICE
-
-          echo "✅ $SERVICE is deployed"
+          
+          echo "✅ $SERVICE deployed"
 
   deploy-infrastructure:
     needs: detect-changes
     runs-on: self-hosted
-    if: ${{ needs.detect-changes.outputs.kafka == 'true' || needs.detect-changes.outputs.databases == 'true' }}
+    if: ${{ needs.detect-changes.outputs.infra_changed == 'true' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Deploy Kafka / Databases
+      - name: Deploy Infrastructure
         run: |
+          echo "🔄 Infrastructure changed, restarting all infra components..."
           cd infra
           export IMAGE_TAG=latest
-
-          if [[ "${{ needs.detect-changes.outputs.kafka }}" == "true" ]]; then
-            echo "🔄 Restarting Kafka & Zookeeper..."
-            docker-compose stop kafka zookeeper || true
-            docker-compose rm -f kafka zookeeper || true
-            docker-compose up -d kafka zookeeper
-            echo "✅ Kafka restarted"
-          fi
-
-          if [[ "${{ needs.detect-changes.outputs.databases }}" == "true" ]]; then
-            echo "🔄 Restarting Postgres..."
-            docker-compose stop postgres || true
-            docker-compose rm -f postgres || true
-            docker-compose up -d postgres
-            echo "✅ Postgres restarted"
-          fi
+          
+          # Stop and restart infrastructure components
+          docker-compose stop kafka zookeeper postgres || true
+          docker-compose rm -f kafka zookeeper postgres || true
+          docker-compose up -d kafka zookeeper postgres
+          
+          echo "✅ Infrastructure redeployed"
