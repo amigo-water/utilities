@@ -19,8 +19,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Get SHA for tracking
         id: set-sha
@@ -35,7 +33,6 @@ jobs:
         id: changes
         uses: dorny/paths-filter@v2
         with:
-          base: HEAD~1
           filters: |
             analytics-reporting-service: services/analytics-reporting-service/**
             billing-service: services/billing-service/**
