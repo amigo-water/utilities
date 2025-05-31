@@ -58,10 +58,12 @@ jobs:
           SERVICES=(analytics-reporting-service billing-service collection-management-service consumer-service customer-support-service gis-location-management-service meter-management-inventory-service notification-communication-service policy-management-service third-party-integration-gateway-service user-identity-access-management-service user-service workflow-approval-service)
 
           matrix=$(jq -n '{include: []}')
+          changes_json='${{ toJson(steps.changes.outputs) }}'
+
           for svc in "${SERVICES[@]}"; do
-            changed="${{ steps.changes.outputs[$svc] }}"
+            changed=$(echo "$changes_json" | jq -r --arg svc "$svc" '.[$svc]')
             if [[ "$changed" == "true" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-              matrix=$(echo $matrix | jq --arg svc "$svc" '.include += [{"service": $svc}]')
+              matrix=$(echo "$matrix" | jq --arg svc "$svc" '.include += [{"service": $svc}]')
             fi
           done
           echo "matrix=$(echo $matrix | jq -c)" >> $GITHUB_OUTPUT
