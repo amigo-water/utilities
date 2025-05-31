@@ -28,6 +28,7 @@ jobs:
             echo "short_sha=$(echo '${{ github.event.workflow_run.head_sha }}' | cut -c1-8)" >> $GITHUB_OUTPUT
           else
             echo "short_sha=$(echo '${{ github.sha }}' | cut -c1-8)" >> $GITHUB_OUTPUT
+          fi
 
       - name: Detect changed services and infra
         id: changes
