@@ -13,24 +13,10 @@ jobs:
     runs-on: self-hosted
     if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
     outputs:
-      analytics-reporting-service: ${{ steps.changes.outputs.analytics-reporting-service }}
-      billing-service: ${{ steps.changes.outputs.billing-service }}
-      collection-management-service: ${{ steps.changes.outputs.collection-management-service }}
-      consumer-service: ${{ steps.changes.outputs.consumer-service }}
-      customer-support-service: ${{ steps.changes.outputs.customer-support-service }}
-      gis-location-management-service: ${{ steps.changes.outputs.gis-location-management-service }}
-      meter-management-inventory-service: ${{ steps.changes.outputs.meter-management-inventory-service }}
-      notification-communication-service: ${{ steps.changes.outputs.notification-communication-service }}
-      policy-management-service: ${{ steps.changes.outputs.policy-management-service }}
-      third-party-integration-gateway-service: ${{ steps.changes.outputs.third-party-integration-gateway-service }}
-      user-identity-access-management-service: ${{ steps.changes.outputs.user-identity-access-management-service }}
-      user-service: ${{ steps.changes.outputs.user-service }}
-      workflow-approval-service: ${{ steps.changes.outputs.workflow-approval-service }}
-      # Check for infrastructure changes
+      short_sha: ${{ steps.set-sha.outputs.short_sha }}
       kafka: ${{ steps.changes.outputs.kafka }}
       databases: ${{ steps.changes.outputs.databases }}
-      short_sha: ${{ steps.set-sha.outputs.short_sha }}
-      
+      matrix: ${{ steps.generate-matrix.outputs.matrix }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -39,251 +25,111 @@ jobs:
         id: set-sha
         run: |
           if [[ "${{ github.event_name }}" == "workflow_run" ]]; then
-            ACTUAL_SHA="${{ github.event.workflow_run.head_sha }}"
+            echo "short_sha=$(echo '${{ github.event.workflow_run.head_sha }}' | cut -c1-8)" >> $GITHUB_OUTPUT
           else
-            ACTUAL_SHA="${{ github.sha }}"
-          fi
-          
-          SHORT_SHA=$(echo ${ACTUAL_SHA} | cut -c1-8)
-          echo "short_sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
-          echo "Deploying with SHA: ${SHORT_SHA}"
+            echo "short_sha=$(echo '${{ github.sha }}' | cut -c1-8)" >> $GITHUB_OUTPUT
 
-      - name: Detect changes
-        uses: dorny/paths-filter@v2
+      - name: Detect changed services and infra
         id: changes
+        uses: dorny/paths-filter@v2
         with:
           filters: |
-            analytics-reporting-service:
-              - 'services/analytics-reporting-service/**'
-            billing-service:
-              - 'services/billing-service/**'
-            collection-management-service:
-              - 'services/collection-management-service/**'
-            consumer-service:
-              - 'services/consumer-service/**'
-            customer-support-service:
-              - 'services/customer-support-service/**'
-            gis-location-management-service:
-              - 'services/gis-location-management-service/**'
-            meter-management-inventory-service:
-              - 'services/meter-management-inventory-service/**'
-            notification-communication-service:
-              - 'services/notification-communication-service/**'
-            policy-management-service:
-              - 'services/policy-management-service/**'
-            third-party-integration-gateway-service:
-              - 'services/third-party-integration-gateway-service/**'
-            user-identity-access-management-service:
-              - 'services/user-identity-access-management-service/**'
-            user-service:
-              - 'services/user-service/**'
-            workflow-approval-service:
-              - 'services/workflow-approval-service/**'
+            analytics-reporting-service: services/analytics-reporting-service/**
+            billing-service: services/billing-service/**
+            collection-management-service: services/collection-management-service/**
+            consumer-service: services/consumer-service/**
+            customer-support-service: services/customer-support-service/**
+            gis-location-management-service: services/gis-location-management-service/**
+            meter-management-inventory-service: services/meter-management-inventory-service/**
+            notification-communication-service: services/notification-communication-service/**
+            policy-management-service: services/policy-management-service/**
+            third-party-integration-gateway-service: services/third-party-integration-gateway-service/**
+            user-identity-access-management-service: services/user-identity-access-management-service/**
+            user-service: services/user-service/**
+            workflow-approval-service: services/workflow-approval-service/**
             kafka:
-              - 'infra/kafka/**'
-              - 'infra/docker-compose.yml'
+              - infra/docker-compose.yml
             databases:
-              - 'infra/databases/**'
-              - 'infra/docker-compose.yml'
+              - infra/docker-compose.yml
+
+      - name: Generate matrix
+        id: generate-matrix
+        run: |
+          SERVICES=(analytics-reporting-service billing-service collection-management-service consumer-service customer-support-service gis-location-management-service meter-management-inventory-service notification-communication-service policy-management-service third-party-integration-gateway-service user-identity-access-management-service user-service workflow-approval-service)
+
+          matrix=$(jq -n '{include: []}')
+          for svc in "${SERVICES[@]}"; do
+            changed="${{ steps.changes.outputs[$svc] }}"
+            if [[ "$changed" == "true" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+              matrix=$(echo $matrix | jq --arg svc "$svc" '.include += [{"service": $svc}]')
+            fi
+          done
+          echo "matrix=$(echo $matrix | jq -c)" >> $GITHUB_OUTPUT
 
   deploy:
     needs: detect-changes
+    if: ${{ fromJson(needs.detect-changes.outputs.matrix).include != '' }}
     runs-on: self-hosted
     strategy:
+      matrix: ${{ fromJson(needs.detect-changes.outputs.matrix) }}
       fail-fast: false
-      matrix:
-        service: [
-          analytics-reporting-service,
-          billing-service,
-          collection-management-service,
-          consumer-service,
-          customer-support-service,
-          gis-location-management-service,
-          meter-management-inventory-service,
-          notification-communication-service,
-          policy-management-service,
-          third-party-integration-gateway-service,
-          user-identity-access-management-service,
-          user-service,
-          workflow-approval-service
-        ]
-    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Check if service should be deployed
-        id: check-deploy
+      - name: Pull and redeploy service only if image changed
         run: |
-          SERVICE_OUTPUT="${{ matrix.service }}"
-          SERVICE_CHANGED=$(echo '${{ toJson(needs.detect-changes.outputs) }}' | jq -r --arg service "$SERVICE_OUTPUT" '.[$service]')
-          
-          # Deploy if changed OR manual workflow_dispatch
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "deploy=true" >> $GITHUB_OUTPUT
-            echo "🔄 Deploying ${{ matrix.service }} (manual trigger - deploy all)"
-          elif [[ "$SERVICE_CHANGED" == "true" ]]; then
-            echo "deploy=true" >> $GITHUB_OUTPUT
-            echo "🔄 Deploying ${{ matrix.service }} (service changed)"
-          else
-            echo "deploy=false" >> $GITHUB_OUTPUT
-            echo "⏭️ Skipping ${{ matrix.service }} (no changes detected)"
+          SERVICE=${{ matrix.service }}
+          IMAGE_NAME=ashritha07/$SERVICE:latest
+
+          echo "🔍 Checking image digest for $SERVICE..."
+
+          docker pull $IMAGE_NAME > /dev/null
+
+          LOCAL_DIGEST=$(docker images --digests --format '{{.Digest}}' $SERVICE | head -n 1 || echo "")
+          REMOTE_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' $IMAGE_NAME || echo "")
+
+          if [[ "$LOCAL_DIGEST" == "$REMOTE_DIGEST" && -n "$LOCAL_DIGEST" ]]; then
+            echo "✅ No change in image digest for $SERVICE, skipping restart"
+            exit 0
           fi
 
-      - name: Deploy service
-        if: steps.check-deploy.outputs.deploy == 'true'
-        run: |
+          echo "🔄 Image has changed or not running, redeploying $SERVICE..."
+
           cd infra
-          
-          # Set IMAGE_TAG to latest so docker-compose uses :latest tags
           export IMAGE_TAG=latest
-          
-          echo "📦 Pulling latest image for ${{ matrix.service }}..."
-          docker-compose pull ${{ matrix.service }}
-          
-          echo "🛑 Stopping ${{ matrix.service }}..."
-          docker-compose stop ${{ matrix.service }}
-          
-          echo "🗑️ Removing old container for ${{ matrix.service }}..."
-          docker-compose rm -f ${{ matrix.service }}
-          
-          echo "🚀 Starting ${{ matrix.service }} with latest image..."
-          docker-compose up -d ${{ matrix.service }}
-          
-          # Wait for service to start
-          sleep 10
-          
-          echo "✅ Checking ${{ matrix.service }} status..."
-          docker-compose ps ${{ matrix.service }}
-          
-          # Check if service is running
-          if docker-compose ps ${{ matrix.service }} | grep -q "Up"; then
-            echo "✅ ${{ matrix.service }} is running successfully!"
-          else
-            echo "❌ ${{ matrix.service }} failed to start!"
-            echo "=== Recent logs for ${{ matrix.service }} ==="
-            docker-compose logs --tail=50 ${{ matrix.service }}
-            exit 1
-          fi
 
-      - name: Service Deployment Summary
-        if: steps.check-deploy.outputs.deploy == 'true'
-        run: |
-          echo "## 🚀 Deployed ${{ matrix.service }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Service:** ${{ matrix.service }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **SHA:** ${{ needs.detect-changes.outputs.short_sha }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Status:** ✅ Running" >> $GITHUB_STEP_SUMMARY
+          docker-compose stop $SERVICE || true
+          docker-compose rm -f $SERVICE || true
+          docker-compose up -d $SERVICE
+
+          echo "✅ $SERVICE is deployed"
 
   deploy-infrastructure:
     needs: detect-changes
     runs-on: self-hosted
-    if: ${{ needs.detect-changes.outputs.kafka == 'true' || needs.detect-changes.outputs.databases == 'true' || github.event_name == 'workflow_dispatch' }}
-    
+    if: ${{ needs.detect-changes.outputs.kafka == 'true' || needs.detect-changes.outputs.databases == 'true' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Deploy infrastructure changes
+      - name: Deploy Kafka / Databases
         run: |
           cd infra
-          
           export IMAGE_TAG=latest
-          
-          echo "🔄 Infrastructure changes detected or manual deployment"
-          
-          # Deploy Kafka if changed
-          if [[ "${{ needs.detect-changes.outputs.kafka }}" == "true" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "📦 Pulling and restarting Kafka..."
-            docker-compose pull kafka zookeeper
-            docker-compose stop kafka zookeeper
-            docker-compose rm -f kafka zookeeper
+
+          if [[ "${{ needs.detect-changes.outputs.kafka }}" == "true" ]]; then
+            echo "🔄 Restarting Kafka & Zookeeper..."
+            docker-compose stop kafka zookeeper || true
+            docker-compose rm -f kafka zookeeper || true
             docker-compose up -d kafka zookeeper
-            sleep 20
-            echo "✅ Kafka services restarted"
+            echo "✅ Kafka restarted"
           fi
-          
-          # Deploy databases if changed
-          if [[ "${{ needs.detect-changes.outputs.databases }}" == "true" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "📦 Pulling and restarting databases..."
-            docker-compose pull postgres
-            docker-compose stop postgres
-            docker-compose rm -f postgres
+
+          if [[ "${{ needs.detect-changes.outputs.databases }}" == "true" ]]; then
+            echo "🔄 Restarting Postgres..."
+            docker-compose stop postgres || true
+            docker-compose rm -f postgres || true
             docker-compose up -d postgres
-            sleep 20
-            echo "✅ Database services restarted"
-          fi
-          
-          echo "✅ Infrastructure deployment completed"
-
-  update-deployment-tracking:
-    needs: [detect-changes, deploy, deploy-infrastructure]
-    runs-on: self-hosted
-    if: always() && (needs.deploy.result == 'success' || needs.deploy-infrastructure.result == 'success')
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Update deployment tracking
-        run: |
-          cd infra
-          SHORT_SHA="${{ needs.detect-changes.outputs.short_sha }}"
-          
-          # Create deployment log with changed services
-          echo "{" > deployed-info.json
-          echo "  \"deployed_at\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"," >> deployed-info.json
-          echo "  \"commit_sha\": \"${{ github.sha }}\"," >> deployed-info.json
-          echo "  \"short_sha\": \"${SHORT_SHA}\"," >> deployed-info.json
-          echo "  \"workflow_run_id\": \"${{ github.run_id }}\"," >> deployed-info.json
-          echo "  \"deployment_type\": \"selective\"," >> deployed-info.json
-          echo "  \"changed_services\": [" >> deployed-info.json
-          
-          # Add changed services to the log
-          CHANGED_SERVICES=""
-          SERVICES=(analytics-reporting-service billing-service collection-management-service consumer-service customer-support-service gis-location-management-service meter-management-inventory-service notification-communication-service policy-management-service third-party-integration-gateway-service user-identity-access-management-service user-service workflow-approval-service)
-          
-          for service in "${SERVICES[@]}"; do
-            SERVICE_CHANGED=$(echo '${{ toJson(needs.detect-changes.outputs) }}' | jq -r --arg service "$service" '.[$service]')
-            if [[ "$SERVICE_CHANGED" == "true" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-              if [[ -n "$CHANGED_SERVICES" ]]; then
-                CHANGED_SERVICES="${CHANGED_SERVICES}, \"${service}\""
-              else
-                CHANGED_SERVICES="\"${service}\""
-              fi
-            fi
-          done
-          
-          echo "    ${CHANGED_SERVICES}" >> deployed-info.json
-          echo "  ]" >> deployed-info.json
-          echo "}" >> deployed-info.json
-          
-          echo "📋 Deployment Summary:"
-          echo "- SHA: ${SHORT_SHA}"
-          echo "- Deployed at: $(date)"
-          echo "- Changed services:"
-          cat deployed-info.json | jq -r '.changed_services[]' | sed 's/^/  - /'
-          
-          # Commit deployment info
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add deployed-info.json
-          git commit -m "Deploy SHA ${SHORT_SHA} - selective deployment [skip ci]" || echo "No changes to commit"
-          git push || echo "Nothing to push"
-
-  notify-completion:
-    needs: [detect-changes, deploy, deploy-infrastructure]
-    runs-on: self-hosted
-    if: always()
-    
-    steps:
-      - name: Deployment notification
-        run: |
-          if [[ "${{ needs.deploy.result }}" == "success" || "${{ needs.deploy-infrastructure.result }}" == "success" ]]; then
-            echo "✅ Selective deployment completed successfully"
-            echo "🚀 Only changed services were restarted"
-            echo "📊 SHA: ${{ needs.detect-changes.outputs.short_sha }}"
-            echo "🔄 Databases and Kafka remained running (unless specifically changed)"
-          else
-            echo "❌ Deployment had some issues"
-            echo "Check the logs above for details"
+            echo "✅ Postgres restarted"
           fi
