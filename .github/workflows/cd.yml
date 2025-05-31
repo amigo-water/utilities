@@ -14,7 +14,7 @@ jobs:
     if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
     outputs:
       short_sha: ${{ steps.set-sha.outputs.short_sha }}
-      changed_services: ${{ steps.changes.outputs.changed_services }}
+      matrix: ${{ steps.build-matrix.outputs.matrix }}
       infra_changed: ${{ steps.changes.outputs.infra }}
     steps:
       - name: Checkout code
@@ -33,7 +33,6 @@ jobs:
         id: changes
         uses: dorny/paths-filter@v2
         with:
-          list-files: shell
           filters: |
             analytics-reporting-service: services/analytics-reporting-service/**
             billing-service: services/billing-service/**
@@ -50,39 +49,38 @@ jobs:
             workflow-approval-service: services/workflow-approval-service/**
             infra: infra/**
 
-      - name: Build service list
-        id: build-list
+      - name: Build matrix
+        id: build-matrix
         run: |
           SERVICES=(analytics-reporting-service billing-service collection-management-service consumer-service customer-support-service gis-location-management-service meter-management-inventory-service notification-communication-service policy-management-service third-party-integration-gateway-service user-identity-access-management-service user-service workflow-approval-service)
           
-          CHANGED_SERVICES=""
+          matrix=$(jq -n '{include: []}')
           changes_json='${{ toJson(steps.changes.outputs) }}'
           
-          # If manual trigger, deploy all services
+          # If manual trigger, include all services
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            CHANGED_SERVICES=$(printf "%s," "${SERVICES[@]}")
-            CHANGED_SERVICES=${CHANGED_SERVICES%,}  # Remove trailing comma
+            for svc in "${SERVICES[@]}"; do
+              matrix=$(echo "$matrix" | jq --arg svc "$svc" '.include += [{"service": $svc}]')
+            done
           else
             # Only include services that actually changed
             for svc in "${SERVICES[@]}"; do
               changed=$(echo "$changes_json" | jq -r --arg svc "$svc" '.[$svc]')
               if [[ "$changed" == "true" ]]; then
-                CHANGED_SERVICES="$CHANGED_SERVICES$svc,"
+                matrix=$(echo "$matrix" | jq --arg svc "$svc" '.include += [{"service": $svc}]')
               fi
             done
-            CHANGED_SERVICES=${CHANGED_SERVICES%,}  # Remove trailing comma
           fi
           
-          echo "changed_services=$CHANGED_SERVICES" >> $GITHUB_OUTPUT
-          echo "Services to deploy: $CHANGED_SERVICES"
+          echo "matrix=$(echo $matrix | jq -c)" >> $GITHUB_OUTPUT
+          echo "Generated matrix: $(echo $matrix | jq -c)"
 
   deploy-services:
     needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.changed_services != '' }}
+    if: ${{ fromJson(needs.detect-changes.outputs.matrix).include != '' }}
     runs-on: self-hosted
     strategy:
-      matrix:
-        service: ${{ fromJson(format('["{0}"]', join(split(needs.detect-changes.outputs.changed_services, ','), '","'))) }}
+      matrix: ${{ fromJson(needs.detect-changes.outputs.matrix) }}
       fail-fast: false
     steps:
       - name: Checkout code
