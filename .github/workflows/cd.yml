@@ -49,31 +49,30 @@ jobs:
             workflow-approval-service: services/workflow-approval-service/**
             infra: infra/**
 
-      - name: Build matrix
+      - name: Check which services have new images
         id: build-matrix
         run: |
           SERVICES=(analytics-reporting-service billing-service collection-management-service consumer-service customer-support-service gis-location-management-service meter-management-inventory-service notification-communication-service policy-management-service third-party-integration-gateway-service user-identity-access-management-service user-service workflow-approval-service)
           
           matrix=$(jq -n '{include: []}')
-          changes_json='${{ toJson(steps.changes.outputs) }}'
+          SHORT_SHA="${{ steps.set-sha.outputs.short_sha }}"
           
-          # If manual trigger, include all services
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            for svc in "${SERVICES[@]}"; do
+          echo "🔍 Checking which services have images with SHA: $SHORT_SHA"
+          
+          for svc in "${SERVICES[@]}"; do
+            IMAGE_NAME="ashritha07/$svc:$SHORT_SHA"
+            
+            # Check if image exists in registry
+            if docker manifest inspect $IMAGE_NAME >/dev/null 2>&1; then
+              echo "✅ Found image for $svc with SHA $SHORT_SHA"
               matrix=$(echo "$matrix" | jq --arg svc "$svc" '.include += [{"service": $svc}]')
-            done
-          else
-            # Only include services that actually changed
-            for svc in "${SERVICES[@]}"; do
-              changed=$(echo "$changes_json" | jq -r --arg svc "$svc" '.[$svc]')
-              if [[ "$changed" == "true" ]]; then
-                matrix=$(echo "$matrix" | jq --arg svc "$svc" '.include += [{"service": $svc}]')
-              fi
-            done
-          fi
+            else
+              echo "⏭️ No image found for $svc with SHA $SHORT_SHA"
+            fi
+          done
           
           echo "matrix=$(echo $matrix | jq -c)" >> $GITHUB_OUTPUT
-          echo "Generated matrix: $(echo $matrix | jq -c)"
+          echo "Final matrix: $(echo $matrix | jq -c)"
 
   deploy-services:
     needs: detect-changes
@@ -89,20 +88,18 @@ jobs:
       - name: Deploy service
         run: |
           SERVICE=${{ matrix.service }}
-          IMAGE_NAME=ashritha07/$SERVICE:latest
+          SHORT_SHA=${{ needs.detect-changes.outputs.short_sha }}
+          IMAGE_NAME=ashritha07/$SERVICE:$SHORT_SHA
           
-          echo "🔍 Pulling latest image for $SERVICE..."
-          docker pull $IMAGE_NAME
-          
-          echo "🔄 Redeploying $SERVICE..."
+          echo "🔄 Deploying $SERVICE with SHA: $SHORT_SHA"
           cd infra
-          export IMAGE_TAG=latest
+          export IMAGE_TAG=$SHORT_SHA
           
           docker-compose stop $SERVICE || true
           docker-compose rm -f $SERVICE || true
           docker-compose up -d $SERVICE
           
-          echo "✅ $SERVICE deployed"
+          echo "✅ $SERVICE deployed with SHA: $SHORT_SHA"
 
   deploy-infrastructure:
     needs: detect-changes
@@ -114,11 +111,10 @@ jobs:
 
       - name: Deploy Infrastructure
         run: |
-          echo "🔄 Infrastructure changed, restarting all infra components..."
+          echo "🔄 Infrastructure changed, restarting components..."
           cd infra
-          export IMAGE_TAG=latest
+          export IMAGE_TAG=${{ needs.detect-changes.outputs.short_sha }}
           
-          # Stop and restart infrastructure components
           docker-compose stop kafka zookeeper postgres || true
           docker-compose rm -f kafka zookeeper postgres || true
           docker-compose up -d kafka zookeeper postgres
