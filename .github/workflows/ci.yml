@@ -151,7 +151,7 @@ jobs:
   #         echo "- **Tags:** ${{ needs.changes.outputs.short_sha }}, latest" >> $GITHUB_STEP_SUMMARY
 
   notify-success:
-    needs: [build-and-push]
+  #  needs: [build-and-push]
     runs-on: self-hosted
     if: success()
     steps:
