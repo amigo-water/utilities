@@ -3,6 +3,7 @@ import passport from 'passport';
 import { User } from '../models/user.model';
 import bcrypt from 'bcryptjs';
 
+
 export const setupGoogleStrategy = () => {
   passport.use(new GoogleStrategy({
       clientID: process.env.GOOGLE_CLIENT_ID!,
