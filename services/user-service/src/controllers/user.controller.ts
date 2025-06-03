@@ -343,7 +343,7 @@ export class UserController {
         success: true,
       });
 
-      console.log("==OTP==")
+      console.log("==OTP11111111111==")
       // Generate OTP for email-based login
       if (type === "email") {
         console.log("Generating OTP for email-based login");
