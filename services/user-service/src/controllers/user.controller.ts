@@ -111,57 +111,64 @@ export class UserController {
 
   async requestOTP(req: Request, res: Response) {
     try {
-      const { identifier, type } = req.body as {
+      const { identifier, type, password } = req.body as {
         identifier: string;
         type: "email" | "phone";
+        password: string;
       };
 
-      console.log("Received OTP request:", { identifier, type });
 
-      if (!identifier || !type) {
-        console.error("Missing required fields");
+      if (!identifier || !type || !password) {
         return res
           .status(400)
-          .json({ message: "Identifier and type are required" });
+          .json({ message: "Identifier, type, and password are required" });
       }
+
+      const user = await User.findOne({
+        where: {
+          "contact_info.email": identifier,
+        },
+      });
+
+      if (!user) {
+        return res.status(401).json({ message: "User not found or invalid credentials" });
+      }
+
+      const isPasswordValid = await bcrypt.compare(password, user.password);
+      if (!isPasswordValid) {
+        return res.status(401).json({ message: "User not found or invalid credentials" });
+      }
+
 
       // Validate email format if type is email
       if (type === "email" && !identifier.includes("@")) {
-        console.error("Invalid email format");
         return res.status(400).json({ message: "Invalid email format" });
       }
 
       // Validate phone number format if type is phone
       if (type === "phone" && !/^[+]?[0-9]{10,}$/.test(identifier)) {
-        console.error("Invalid phone number format");
         return res.status(400).json({ message: "Invalid phone number format" });
       }
 
       const otp = this.generateOTP();
-      console.log("Generated OTP:", otp);
 
       // Store OTP with identifier
       this.storeOTP(identifier, otp);
-      console.log("OTP stored successfully for identifier:", identifier);
 
       // Send OTP based on type
       switch (type) {
         case "email":
-          console.log("Sending OTP email to:", identifier);
           await this.sendOTPEmail(identifier, otp);
           break;
         case "phone":
-          console.log("Sending OTP SMS to:", identifier);
           await this.sendOTPPhone(identifier, otp);
           break;
         default:
-          console.error("Invalid type received:", type);
           return res.status(400).json({ message: "Invalid type" });
       }
 
-      res.json({ message: "OTP sent successfully" });
+      res.status(200).json({ message: "OTP sent successfully" });
     } catch (error) {
-      console.error("Error in requestOTP:", error);
       res.status(500).json({ 
         message: "Error sending OTP", 
         error: error instanceof Error ? error.message : "Unknown error" 
