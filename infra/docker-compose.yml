@@ -305,7 +305,7 @@ services:
       TWILIO_PHONE_NUMBER: your-twilio-phone-number
 
       SMTP_USER: ashritha.amigo@gmail.com
-      SMTP_PASSWORD: bbkk bkzy ctio fkrw
+      SMTP_PASSWORD: tztm fiox rtec wtxs
       SMTP_HOST: ashritha.amigo@gmail.com
       SMTP_PORT: 587
       SMTP_IS_SECURE: "true" 
