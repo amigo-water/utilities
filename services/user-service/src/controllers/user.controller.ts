@@ -2,12 +2,11 @@ import { Request, Response } from "express";
 import { User, UserRole, IUser, LoginHistory } from "../models/user.model";
 import { v4 as uuidv4 } from "uuid";
 import nodemailer from "nodemailer";
-import twilio from "twilio";
 import bcrypt from "bcryptjs";
 import * as jwt from "jsonwebtoken";
 import { KafkaService } from '../services/kafka.service';
 import { messagingService } from '../services/messaging.service';
-
+import { Otp } from '../models/otp.model';
 
 // Extend Express Request type to include user property
 declare global {
@@ -28,16 +27,15 @@ interface LoginRequest {
   identifier: string;
   password: string;
   type: "email" | "phone" | "username";
+  otp: string;
 }
 
 export class UserController {
   public readonly JWT_SECRET: string = process.env.JWT_SECRET || "";
   public readonly JWT_EXPIRES_IN: string = "24h";
-  public readonly OTP_EXPIRES_IN: number =
-    Number(process.env.OTP_EXPIRES_IN) || 5 * 60 * 1000; // 5 minutes
+  public readonly OTP_EXPIRES_IN_MINUTES: number =
+    Number(process.env.OTP_EXPIRES_IN_MINUTES) || 5; // 5 minutes
   public readonly OTP_LENGTH: number = Number(process.env.OTP_LENGTH) || 6;
-
-  private readonly otpCache: Map<string, { otp: string; expiresAt: number }> = new Map();
 
   private readonly transporter = nodemailer.createTransport({
     service: "gmail",
@@ -47,10 +45,6 @@ export class UserController {
     },
   });
 
-  private readonly twilioClient = twilio(
-    process.env.TWILIO_ACCOUNT_SID,
-    process.env.TWILIO_AUTH_TOKEN
-  );
   private kafkaService: KafkaService;
 
   constructor() {
@@ -68,13 +62,25 @@ export class UserController {
     return Math.floor(100000 + Math.random() * 900000).toString();
   }
 
-  private storeOTP(identifier: string, otp: string): void {
-    console.log("Storing OTP for identifier:", identifier);
-    this.otpCache.set(identifier, {
-      otp,
-      expiresAt: Date.now() + Number(process.env.OTP_EXPIRES_IN),
-    });
-    console.log("OTP stored successfully");
+  private async storeOTP(identifier: string, otp: string, userId?: string): Promise<void> {
+    console.log(`Storing OTP for identifier: ${identifier} in database`);
+    try {
+      const expiresAt = new Date(Date.now() + this.OTP_EXPIRES_IN_MINUTES * 60 * 1000);
+      // Consider invalidating previous active OTPs for the same identifier
+      await Otp.update({ is_used: true }, { where: { identifier, is_used: false } });
+
+      await Otp.create({
+        identifier,
+        otp_code: otp, // SECURITY: Consider hashing OTPs: await bcrypt.hash(otp, 10)
+        expires_at: expiresAt,
+        user_id: userId, // Optional: link to user if available
+        is_used: false,
+      });
+      console.log(`OTP stored successfully in database for identifier: ${identifier}`);
+    } catch (error) {
+      console.error(`Error storing OTP in database for ${identifier}:`, error);
+      // Depending on policy, you might want to re-throw to signal failure to the caller
+    }
   }
 
   private async sendOTPEmail(email: string, otp: string): Promise<void> {
@@ -83,7 +89,7 @@ export class UserController {
       from: process.env.SMTP_USER,
       to: email,
       subject: "Verification OTP",
-      text: `Your verification OTP is: ${otp}. This OTP will expire in 5 minutes.`,
+      text: `Your verification OTP is: ${otp}. This OTP will expire in ${this.OTP_EXPIRES_IN_MINUTES} minutes.`,
     });
   }
 
@@ -92,21 +98,46 @@ export class UserController {
     await messagingService.sendOTP(phone, otp, 'sms');
   }
 
-  private async validateOTP(identifier: string, otp: string): Promise<boolean> {
-    const otpData = this.otpCache.get(identifier);
-    if (!otpData) return false;
+  private async validateOTP(identifier: string, otpToValidate: string): Promise<boolean> {
+    console.log(`Validating OTP for ${identifier} from database.`);
+    try {
+      const otpRecord = await Otp.findOne({
+        where: {
+          identifier,
+          is_used: false, // Only find OTPs that haven't been used
+        },
+        order: [['createdAt', 'DESC']], // Get the most recent active OTP
+      });
 
-    if (otpData.expiresAt < Date.now()) {
-      this.otpCache.delete(identifier);
+      if (!otpRecord) {
+        console.log(`validateOTP: No active OTP found in DB for identifier: ${identifier}`);
+        return false;
+      }
+
+      // Check for expiration
+      if (new Date() > new Date(otpRecord.expires_at)) {
+        console.log(`validateOTP: OTP expired for identifier: ${identifier}`);
+        await otpRecord.update({ is_used: true }); // Mark as used
+        return false;
+      }
+
+      // SECURITY: If OTPs are hashed in DB, use: const isMatch = await bcrypt.compare(otpToValidate, otpRecord.otp_code);
+      const isMatch = otpRecord.otp_code === otpToValidate; // For plaintext OTPs
+
+      if (isMatch) {
+        console.log(`validateOTP: OTP matched for ${identifier}.`);
+        // IMPORTANT: Marking as used should typically happen after the primary action (e.g., login) is successful.
+        // For a generic validateOTP, this might be okay, or defer to the calling function.
+        // await otpRecord.update({ is_used: true }); 
+        return true;
+      }
+      
+      console.log(`validateOTP: Incorrect OTP for identifier: ${identifier}`);
+      return false;
+    } catch (error) {
+      console.error(`Error during validateOTP from DB for ${identifier}:`, error);
       return false;
     }
-
-    if (otpData.otp === otp) {
-      this.otpCache.delete(identifier);
-      return true;
-    }
-
-    return false;
   }
 
   async requestOTP(req: Request, res: Response) {
@@ -150,18 +181,18 @@ export class UserController {
         return res.status(400).json({ message: "Invalid phone number format" });
       }
 
-      const otp = this.generateOTP();
+      const otpGenerated = this.generateOTP();
 
-      // Store OTP with identifier
-      this.storeOTP(identifier, otp);
+      // Store OTP with identifier (and optionally userId if available)
+      await this.storeOTP(identifier, otpGenerated, user?.user_id);
 
       // Send OTP based on type
       switch (type) {
         case "email":
-          await this.sendOTPEmail(identifier, otp);
+          await this.sendOTPEmail(identifier, otpGenerated);
           break;
         case "phone":
-          await this.sendOTPPhone(identifier, otp);
+          await this.sendOTPPhone(identifier, otpGenerated);
           break;
         default:
           return res.status(400).json({ message: "Invalid type" });
@@ -288,10 +319,10 @@ export class UserController {
 
   async login(req: Request, res: Response) {
     try {
-      const { identifier, password, type } = req.body as LoginRequest;
+      const { identifier, password, type, otp } = req.body as LoginRequest;
 
-      if (!identifier || !password || !type) {
-        return res.status(400).json({ message: "All fields are required" });
+      if (!identifier || !password || !type || !otp) {
+        return res.status(400).json({ message: "Identifier, password, type, and OTP are required" });
       }
 
       let user: IUser | null = null;
@@ -324,13 +355,21 @@ export class UserController {
       }
 
       if (!user) {
-        return res.status(401).json({ message: "Invalid credentials" });
+        console.log("User not found");
+        return res.status(401).json({ message: "Invalid credentials11" });
       }
 
       // Verify password
       const isPasswordValid = await bcrypt.compare(password, user.password);
       if (!isPasswordValid) {
+        console.log("Invalid password");
         return res.status(401).json({ message: "Invalid credentials" });
+      }
+
+      // Verify OTP
+      const isOtpValid = await this.verifyLoginOTP(req, res);
+      if (!isOtpValid) {
+        return; // OTP is invalid, and verifyLoginOTP should have already sent the response.
       }
 
       // For phone and username login, proceed directly
@@ -350,52 +389,6 @@ export class UserController {
         success: true,
       });
 
-      console.log("==OTP11111111111==")
-      // Generate OTP for email-based login
-      if (type === "email") {
-        console.log("Generating OTP for email-based login");
-        const otp = this.generateOTP();
-        console.log("Generated OTP:", otp);
-        this.storeOTP(identifier, otp);
-        await this.sendOTPEmail(identifier, otp);
-        
-        return res.status(200).json({
-          message: "OTP sent successfully",
-          user: {
-            user_id: user.user_id,
-            username: user.username,
-            name: user.name,
-            role: user.role,
-            utility_id: user.utility_id,
-            contact_info: user.contact_info,
-            status: user.status,
-            created_at: user.createdAt,
-          }
-        });
-      }else if(type === "phone"){
-        console.log("Generating OTP for phone-based login");
-        const otp = this.generateOTP();
-        console.log("Generated OTP:", otp);
-        this.storeOTP(identifier, otp);
-        await this.sendOTPPhone(identifier, otp);
-        
-        return res.status(200).json({
-          message: "OTP sent successfully",
-          user: {
-            user_id: user.user_id,
-            username: user.username,
-            name: user.name,
-            role: user.role,
-            utility_id: user.utility_id,
-            contact_info: user.contact_info,
-            status: user.status,
-            created_at: user.createdAt,
-          }
-        });
-
-      }
-
-      
 
       // Generate JWT token
       const token = jwt.sign(
@@ -423,76 +416,60 @@ export class UserController {
     }
   }
 
-  async verifyLoginOTP(req: Request, res: Response) {
+  async verifyLoginOTP(req: Request, res: Response): Promise<boolean> {
+    const { identifier, otp } = req.body as { identifier: string; otp: string; /* other fields */ };
+  
+    if (!identifier || !otp) {
+      res.status(400).json({ message: "Identifier and OTP are required for verification." });
+      return false; 
+    }
+  
+    console.log(`Verifying login OTP for ${identifier} from database.`);
     try {
-      const { identifier, otp } = req.body as {
-        identifier: string;
-        otp: string;
-      };
-
-      if (!identifier || !otp) {
-        return res.status(400).json({ message: "Identifier and OTP are required" });
-      }
-
-      const isValid = await this.validateOTP(identifier, otp);
-      if (!isValid) {
-        return res.status(400).json({ message: "Invalid or expired OTP" });
-      }
-
-      // Find user by email
-      const user = await User.findOne({
+      const otpRecord = await Otp.findOne({
         where: {
-          "contact_info.email": identifier,
+          identifier,
+          is_used: false, // Only find OTPs that haven't been used
         },
+        order: [['createdAt', 'DESC']], // Get the most recent active OTP
       });
-
-      if (!user) {
-        return res.status(401).json({ message: "User not found" });
+  
+      if (!otpRecord) {
+        console.log(`verifyLoginOTP: No active OTP found in DB for identifier: ${identifier}`);
+        res.status(401).json({ message: "Invalid or expired OTP." });
+        return false; 
       }
 
-      // Get client IP address
-      const ipAddress =
-        req.headers["x-forwarded-for"] ||
-        req.socket.remoteAddress ||
-        (req as Express.Request & { socket: { remoteAddress: string } }).socket
-          ?.remoteAddress ||
-        "unknown";
+      // Check for expiration
+      if (new Date() > new Date(otpRecord.expires_at)) {
+        console.log(`verifyLoginOTP: OTP expired for identifier: ${identifier}`);
+        await otpRecord.update({ is_used: true }); // Mark as used
+        res.status(401).json({ message: "Invalid or expired OTP." });
+        return false;
+      }
+    
+      // SECURITY: If OTPs are hashed in DB, use: const isOtpMatch = await bcrypt.compare(otp, otpRecord.otp_code);
+      const isOtpMatch = otpRecord.otp_code === otp; // For plaintext OTPs
 
-      // Create login history record
-      await LoginHistory.create({
-        user_id: user.user_id,
-        ip_address: ipAddress,
-        user_agent: req.headers["user-agent"] || "unknown",
-        login_at: new Date(),
-        success: true,
-      });
-
-      // Generate JWT token
-      const token = jwt.sign(
-        { user_id: user.user_id },
-        process.env.JWT_SECRET as string,
-        { expiresIn: "24h" }
-      );
-
-      res.json({
-        message: "Login successful",
-        user: {
-          user_id: user.user_id,
-          username: user.username,
-          name: user.name,
-          role: user.role,
-          utility_id: user.utility_id,
-          contact_info: user.contact_info,
-          status: user.status,
-          created_at: user.created_at,
-        },
-        token,
-      });
+      if (!isOtpMatch) { 
+        console.log(`verifyLoginOTP: Incorrect OTP for identifier: ${identifier}`);
+        // Note: Do NOT mark OTP as used for incorrect attempts. Allow user to retry with the same OTP if it's still valid.
+        // Implement attempt limiting separately if needed.
+        res.status(401).json({ message: "Invalid or expired OTP." }); 
+        return false; 
+      }
+    
+      // OTP is valid and matches
+      console.log(`verifyLoginOTP: OTP verified successfully for identifier: ${identifier}`);
+      // Mark OTP as used to prevent reuse AFTER successful verification in the login flow
+      await otpRecord.update({ is_used: true }); 
+      return true; // OTP is valid, DO NOT send a response here.
     } catch (error) {
-      res.status(500).json({ message: "Error verifying OTP", error: error });
+      console.error(`Error during OTP verification with DB for ${identifier}:`, error);
+      res.status(500).json({ message: "Error during OTP verification" });
+      return false;
     }
   }
-
   async logout(req: Request, res: Response) {
     try {
       const userId = req.user?.user_id;
