@@ -3,6 +3,8 @@ import dotenv from 'dotenv';
 import  sequelize from './config/database';
 import { userRoutes } from './routes/user.routes';
 import { User, UserRole } from './models/user.model';
+import { Otp } from './models/otp.model';  // Add this import
+
 
 dotenv.config();
 
@@ -22,6 +24,18 @@ sequelize.authenticate()
   .then(() => {
     console.log('Connected to PostgreSQL database');
     
+   
+    Otp.initialize(sequelize); 
+
+    // Set up associations
+    const models = {
+      User,
+      UserRole,
+      Otp
+    };
+
+  
+    Otp.associate(models);
     // Sync both models with the database
     return sequelize.sync({
       alter: true,
