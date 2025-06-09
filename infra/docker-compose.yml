@@ -42,7 +42,7 @@ services:
     depends_on:
       - zookeeper
     environment:
-      KAFKA_HEAP_OPTS: "-Xmx512m -Xms512m"
+      KAFKA_HEAP_OPTS: "-Xmx1024m -Xms1024m"
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
