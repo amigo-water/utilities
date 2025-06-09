@@ -388,6 +388,7 @@ export class UserController {
         success: true,
       });
 
+
       // Generate JWT token
       const token = jwt.sign(
         { user_id: user.user_id },
