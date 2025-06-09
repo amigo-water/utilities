@@ -63,7 +63,6 @@ export class UserController {
   }
 
   private async storeOTP(identifier: string, otp: string, userId?: string): Promise<void> {
-    console.log(`Storing OTP for identifier: ${identifier} in database`);
     try {
       const expiresAt = new Date(Date.now() + this.OTP_EXPIRES_IN_MINUTES * 60 * 1000);
       // Consider invalidating previous active OTPs for the same identifier
