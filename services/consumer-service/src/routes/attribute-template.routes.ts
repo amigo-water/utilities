@@ -13,7 +13,7 @@ router.get('/:utilityId/:applicableTo', attributeTemplateController.getTemplates
 router.get('/:utilityId/:applicableTo/form', attributeTemplateController.generateDynamicForm);
 
 // Get template by ID
-router.get('/:templateId', attributeTemplateController.getTemplateById);
+router.get('/:templateId', attributeTemplateController.getTemplateById
 
 // Update template
 router.put('/:templateId', attributeTemplateController.updateTemplate);
