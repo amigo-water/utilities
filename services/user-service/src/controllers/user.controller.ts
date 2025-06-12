@@ -178,7 +178,6 @@ export class UserController {
         return res.status(400).json({ message: "Invalid phone number format" });
       }
 
-      console.log("requestOTP", identifier, type, password);
 
       if (!identifier || !password) {
         return res
