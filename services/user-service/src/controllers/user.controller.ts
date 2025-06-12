@@ -4,9 +4,9 @@ import { v4 as uuidv4 } from "uuid";
 import nodemailer from "nodemailer";
 import bcrypt from "bcryptjs";
 import * as jwt from "jsonwebtoken";
-import { KafkaService } from "../services/kafka.service";
-import { messagingService } from "../services/messaging.service";
-import { Otp } from "../models/otp.model";
+import { KafkaService } from '../services/kafka.service';
+import { messagingService } from '../services/messaging.service';
+import { Otp } from '../models/otp.model';
 
 // Extend Express Request type to include user property
 declare global {
@@ -30,6 +30,20 @@ interface LoginRequest {
   otp: string;
 }
 
+type IdentifierType = 'email' | 'phone' ;
+
+
+export function isEmail(value: string): boolean {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(value);
+}
+
+export function isPhone(value: string): boolean {
+  const phoneRegex = /^[0-9]{10}$/;
+  return phoneRegex.test(value);
+}
+
+
 export class UserController {
   public readonly JWT_SECRET: string = process.env.JWT_SECRET || "";
   public readonly JWT_EXPIRES_IN: string = "24h";
@@ -44,7 +58,7 @@ export class UserController {
       pass: process.env.SMTP_PASSWORD,
     },
   });
-
+ 
   private kafkaService: KafkaService;
 
   constructor() {
@@ -62,20 +76,12 @@ export class UserController {
     return Math.floor(100000 + Math.random() * 900000).toString();
   }
 
-  private async storeOTP(
-    identifier: string,
-    otp: string,
-    userId?: string
-  ): Promise<void> {
+  private async storeOTP(identifier: string, otp: string, userId?: string): Promise<void> {
+    console.log(`Storing OTP for identifier: ${identifier} in database`);
     try {
-      const expiresAt = new Date(
-        Date.now() + this.OTP_EXPIRES_IN_MINUTES * 60 * 1000
-      );
+      const expiresAt = new Date(Date.now() + this.OTP_EXPIRES_IN_MINUTES * 60 * 1000);
       // Consider invalidating previous active OTPs for the same identifier
-      await Otp.update(
-        { is_used: true },
-        { where: { identifier, is_used: false } }
-      );
+      await Otp.update({ is_used: true }, { where: { identifier, is_used: false } });
 
       await Otp.create({
         identifier,
@@ -84,9 +90,7 @@ export class UserController {
         user_id: userId, // Optional: link to user if available
         is_used: false,
       });
-      console.log(
-        `OTP stored successfully in database for identifier: ${identifier}`
-      );
+      console.log(`OTP stored successfully in database for identifier: ${identifier}`);
     } catch (error) {
       console.error(`Error storing OTP in database for ${identifier}:`, error);
       // Depending on policy, you might want to re-throw to signal failure to the caller
@@ -104,14 +108,11 @@ export class UserController {
   }
 
   private async sendOTPPhone(phone: string, otp: string): Promise<void> {
-    await messagingService.sendOTP(phone, otp, "whatsapp");
-    await messagingService.sendOTP(phone, otp, "sms");
+    await messagingService.sendOTP(phone, otp, 'whatsapp');
+    await messagingService.sendOTP(phone, otp, 'sms');
   }
 
-  private async validateOTP(
-    identifier: string,
-    otpToValidate: string
-  ): Promise<boolean> {
+  private async validateOTP(identifier: string, otpToValidate: string): Promise<boolean> {
     console.log(`Validating OTP for ${identifier} from database.`);
     try {
       const otpRecord = await Otp.findOne({
@@ -119,13 +120,11 @@ export class UserController {
           identifier,
           is_used: false, // Only find OTPs that haven't been used
         },
-        order: [["createdAt", "DESC"]], // Get the most recent active OTP
+        order: [['createdAt', 'DESC']], // Get the most recent active OTP
       });
 
       if (!otpRecord) {
-        console.log(
-          `validateOTP: No active OTP found in DB for identifier: ${identifier}`
-        );
+        console.log(`validateOTP: No active OTP found in DB for identifier: ${identifier}`);
         return false;
       }
 
@@ -143,17 +142,14 @@ export class UserController {
         console.log(`validateOTP: OTP matched for ${identifier}.`);
         // IMPORTANT: Marking as used should typically happen after the primary action (e.g., login) is successful.
         // For a generic validateOTP, this might be okay, or defer to the calling function.
-        // await otpRecord.update({ is_used: true });
+        // await otpRecord.update({ is_used: true }); 
         return true;
       }
-
+      
       console.log(`validateOTP: Incorrect OTP for identifier: ${identifier}`);
       return false;
     } catch (error) {
-      console.error(
-        `Error during validateOTP from DB for ${identifier}:`,
-        error
-      );
+      console.error(`Error during validateOTP from DB for ${identifier}:`, error);
       return false;
     }
   }
@@ -164,61 +160,69 @@ export class UserController {
         identifier: string;
         password: string;
       };
-
-      const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier);
-      const type = isEmail ? "email" : "phone";
-
-      // Validate email format if type is email
-      if (type === "email" && !isEmail) {
-        return res.status(400).json({ message: "Invalid email format" });
-      }
-
-      // Validate phone number format if type is phone
-      if (type === "phone" && !/^(\+91)?[6-9]\d{9}$/.test(identifier)) {
-        return res.status(400).json({ message: "Invalid phone number format" });
-      }
-
-
+      
       if (!identifier || !password) {
         return res
           .status(400)
           .json({ message: "Identifier, and password are required" });
       }
 
-      let user;
-      if (type === "email") {
-        user = await User.findOne({
-          where: {
-            "contact_info.email": identifier,
-          },
-        });
-      } else {
-        user = await User.findOne({
-          where: {
-            "contact_info.phone": identifier,
-          },
-        });
+      function getIdentifierType(identifier: string): IdentifierType | null {
+        if (isEmail(identifier)) return 'email';
+        if (isPhone(identifier)) return 'phone';
+        return null;
       }
 
+      const type: IdentifierType | null = getIdentifierType(identifier);
+
+      // Validate email format if type is email
+      if (type === "email" && !isEmail(identifier)) {
+        return res.status(400).json({ message: "Invalid email format" });
+      } else if (type === "phone" && !isPhone(identifier)) {
+        // Validate phone number format if type is phone
+        return res.status(400).json({ message: "Invalid phone number format" });
+      } else if (type === null) {
+        // Default error case for invalid or undefined type
+        return res.status(400).json({ message: "Invalid identifier type" });
+      }
+
+      console.log("requestOTP",identifier,type,password)
+
+
+      let user: IUser | null;
+
+      if(type === "email"){
+         user = await User.findOne({
+        where: {
+          "contact_info.email": identifier,
+        },
+      });
+      } else{
+        user = await User.findOne({
+        where: {
+          "contact_info.phone": identifier,
+        },
+      })  as IUser | null;  
+      }
+      
+    console.log("req-erro:",user)
+
       if (!user) {
-        return res
-          .status(401)
-          .json({ message: "User not found or invalid credentials" });
+        return res.status(401).json({ message: "User not found or invalid credentials" });
       }
 
       const isPasswordValid = await bcrypt.compare(password, user.password);
       if (!isPasswordValid) {
-        return res
-          .status(401)
-          .json({ message: "User not found or invalid credentials" });
+        return res.status(401).json({ message: "User not found or invalid credentials" });
       }
+
 
       const otpGenerated = this.generateOTP();
 
       // Store OTP with identifier (and optionally userId if available)
       await this.storeOTP(identifier, otpGenerated, user?.user_id);
 
-      console.log(otpGenerated);
+      console.log(otpGenerated)
       // Send OTP based on type
       switch (type) {
         case "email":
@@ -233,9 +237,9 @@ export class UserController {
 
       res.status(200).json({ message: "OTP sent successfully" });
     } catch (error) {
-      res.status(500).json({
-        message: "Error sending OTP",
-        error: error instanceof Error ? error.message : "Unknown error",
+      res.status(500).json({ 
+        message: "Error sending OTP", 
+        error: error instanceof Error ? error.message : "Unknown error" 
       });
     }
   }
@@ -271,26 +275,19 @@ export class UserController {
 
       // Validate contact info
       if (!contact_info?.email && !contact_info?.phone) {
-        return res.status(400).json({
-          message: "Both email and phone are required.",
-        });
+        return res
+          .status(400)
+          .json({
+            message: "Both email and phone are required.",
+          });
       }
 
-      // Validate phone number format if type is phone
-      if (
-        role === "email" &&
-        /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact_info?.email) &&
-        /^(\+91)?[6-9]\d{9}$/.test(contact_info?.phone)
-      ) {
-        return res.status(400).json({ message: "Invalid phone number format" });
-      }
-
-      // Validate phone number format if type is phone
-      if (
-        role === "phone" &&
-        !/^(\+91)?[6-9]\d{9}$/.test(contact_info?.phone)
-      ) {
-        return res.status(400).json({ message: "Invalid phone number format" });
+        // Validate phone number format if type is phone
+      if (role === "email" && !isEmail(contact_info?.email) && !isPhone(contact_info?.phone)) {
+        return res.status(400).json({ message: "Invalid phone number format1" });
+      } else if  (role === "phone" && !isPhone(contact_info?.phone)) {
+        // Validate phone number format if type is phone
+        return res.status(400).json({ message: "Invalid phone number format2" });
       }
 
       // Check if username already exists
@@ -333,12 +330,12 @@ export class UserController {
       //   jwtService.getSecret(),
       //   { expiresIn: this.JWT_EXPIRES_IN }
       // );
-      await this.kafkaService.publish("user.created", {
+      await this.kafkaService.publish('user.created', {
         userId: user.user_id,
         email: user.contact_info.email,
         name: user.name,
         createdAt: new Date().toISOString(),
-        eventType: "user.created",
+        eventType: 'user.created',
       });
 
       res.status(201).json({
@@ -369,26 +366,24 @@ export class UserController {
     try {
       const { identifier, password, otp } = req.body as LoginRequest;
 
-      if (!identifier || !password || !otp) {
-        return res
-          .status(400)
-          .json({
-            message: "Identifier, password, type, and OTP are required",
-          });
+      if (!identifier || !password  || !otp) {
+        return res.status(400).json({ message: "Identifier, password, and OTP are required" });
       }
 
       let user: IUser | null = null;
 
-      let type = null;
 
-      if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier)) {
-        type = "email";
-      } else if (/^\+?\d{10,15}$/.test(identifier)) {
-        type = "phone";
+      let type: IdentifierType;
+      
+      if (isEmail(identifier)) {
+          type = "email";
+      } else if (isPhone(identifier)) {
+          type = "phone";
       } else {
-        type = "username";
+        throw new Error("Invalid identifier: must be a valid email or phone number");
       }
 
+    
       // Find user based on identifier type
       switch (type) {
         case "email":
@@ -405,15 +400,8 @@ export class UserController {
             },
           });
           break;
-        case "username":
-          user = await User.findOne({
-            where: {
-              username: identifier,
-            },
-          });
-          break;
         default:
-          return res.status(400).json({ message: "Invalid type" });
+          return res.status(400).json({ message: "Invalid identifier: must be a valid email or phone number" });
       }
 
       if (!user) {
@@ -451,6 +439,7 @@ export class UserController {
         success: true,
       });
 
+
       // Generate JWT token
       const token = jwt.sign(
         { user_id: user.user_id },
@@ -473,23 +462,21 @@ export class UserController {
         token,
       });
     } catch (error) {
-      res.status(500).json({ message: "Error during login", error: error });
+      res.status(500).json({ 
+        message: "Error during login",  
+        error: error instanceof Error ? error.message : String(error), 
+      });
     }
   }
 
   async verifyLoginOTP(req: Request, res: Response): Promise<boolean> {
-    const { identifier, otp } = req.body as {
-      identifier: string;
-      otp: string /* other fields */;
-    };
-
+    const { identifier, otp } = req.body as { identifier: string; otp: string; /* other fields */ };
+  
     if (!identifier || !otp) {
-      res
-        .status(400)
-        .json({ message: "Identifier and OTP are required for verification." });
-      return false;
+      res.status(400).json({ message: "Identifier and OTP are required for verification." });
+      return false; 
     }
-
+  
     console.log(`Verifying login OTP for ${identifier} from database.`);
     try {
       const otpRecord = await Otp.findOne({
@@ -497,52 +484,41 @@ export class UserController {
           identifier,
           is_used: false, // Only find OTPs that haven't been used
         },
-        order: [["createdAt", "DESC"]], // Get the most recent active OTP
+        order: [['createdAt', 'DESC']], // Get the most recent active OTP
       });
-
+  
       if (!otpRecord) {
-        console.log(
-          `verifyLoginOTP: No active OTP found in DB for identifier: ${identifier}`
-        );
+        console.log(`verifyLoginOTP: No active OTP found in DB for identifier: ${identifier}`);
         res.status(401).json({ message: "Invalid or expired OTP." });
-        return false;
+        return false; 
       }
 
       // Check for expiration
       if (new Date() > new Date(otpRecord.expires_at)) {
-        console.log(
-          `verifyLoginOTP: OTP expired for identifier: ${identifier}`
-        );
+        console.log(`verifyLoginOTP: OTP expired for identifier: ${identifier}`);
         await otpRecord.update({ is_used: true }); // Mark as used
         res.status(401).json({ message: "Invalid or expired OTP." });
         return false;
       }
-
+    
       // SECURITY: If OTPs are hashed in DB, use: const isOtpMatch = await bcrypt.compare(otp, otpRecord.otp_code);
       const isOtpMatch = otpRecord.otp_code === otp; // For plaintext OTPs
 
-      if (!isOtpMatch) {
-        console.log(
-          `verifyLoginOTP: Incorrect OTP for identifier: ${identifier}`
-        );
+      if (!isOtpMatch) { 
+        console.log(`verifyLoginOTP: Incorrect OTP for identifier: ${identifier}`);
         // Note: Do NOT mark OTP as used for incorrect attempts. Allow user to retry with the same OTP if it's still valid.
         // Implement attempt limiting separately if needed.
-        res.status(401).json({ message: "Invalid or expired OTP." });
-        return false;
+        res.status(401).json({ message: "Invalid or expired OTP." }); 
+        return false; 
       }
-
+    
       // OTP is valid and matches
-      console.log(
-        `verifyLoginOTP: OTP verified successfully for identifier: ${identifier}`
-      );
+      console.log(`verifyLoginOTP: OTP verified successfully for identifier: ${identifier}`);
       // Mark OTP as used to prevent reuse AFTER successful verification in the login flow
-      await otpRecord.update({ is_used: true });
+      await otpRecord.update({ is_used: true }); 
       return true; // OTP is valid, DO NOT send a response here.
     } catch (error) {
-      console.error(
-        `Error during OTP verification with DB for ${identifier}:`,
-        error
-      );
+      console.error(`Error during OTP verification with DB for ${identifier}:`, error);
       res.status(500).json({ message: "Error during OTP verification" });
       return false;
     }
@@ -558,7 +534,7 @@ export class UserController {
       delete req.headers.authorization;
 
       // Optionally, you could also clear the token from the client's cookie if you're using cookies
-      res.clearCookie("token");
+      res.clearCookie('token');
 
       res.json({ message: "Logged out successfully" });
     } catch (error) {
@@ -625,13 +601,13 @@ export class UserController {
         return res.status(404).json({ message: "User not found" });
       }
 
-      await this.kafkaService.publish("user.updated", {
+      await this.kafkaService.publish('user.updated', {
         userId: updatedUser.user_id,
         name: updatedUser.name,
         contact_info: updatedUser.contact_info,
         status: updatedUser.status,
         updatedAt: updatedUser.updated_at,
-        eventType: "user.updated",
+        eventType: 'user.updated',
       });
 
       res.json({
@@ -684,9 +660,9 @@ export class UserController {
         { where: { user_id: userId } }
       );
 
-      await this.kafkaService.publish("user.password.updated", {
+      await this.kafkaService.publish('user.password.updated', {
         userId,
-        eventType: "user.password.updated",
+        eventType: 'user.password.updated',
       });
 
       res.json({ message: "Password updated successfully" });
@@ -729,10 +705,10 @@ export class UserController {
         role_name: roleName,
       });
 
-      await this.kafkaService.publish("role.created", {
+      await this.kafkaService.publish('role.created', {
         userId,
         role_name: roleName,
-        eventType: "role.created",
+        eventType: 'role.created',
       });
 
       res.status(201).json({
@@ -768,10 +744,10 @@ export class UserController {
         role_name: roleName,
       });
 
-      await this.kafkaService.publish("role.updated", {
+      await this.kafkaService.publish('role.updated', {
         userId: role.user_id,
         role_name: roleName,
-        eventType: "role.updated",
+        eventType: 'role.updated',
       });
 
       res.json({
@@ -803,13 +779,13 @@ export class UserController {
 
       await role.destroy();
 
-      await this.kafkaService.publish("role.deleted", {
+      await this.kafkaService.publish('role.deleted', {
         userId: role.user_id,
         role_name: role.role_name,
-        eventType: "role.deleted",
+        eventType: 'role.deleted',
       });
 
-      res.json({ message: "Role deleted successfully" });
+        res.json({ message: "Role deleted successfully" });
     } catch (error) {
       res.status(500).json({ message: "Error deleting role", error });
     }
@@ -854,3 +830,4 @@ export class UserController {
     }
   }
 }
+

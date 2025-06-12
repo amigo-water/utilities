@@ -100,7 +100,12 @@ export class ConsumerSearchController {
         });
       }
 
-      const consumer = await Consumer.findOne({
+      // Define the include type
+      type ConsumerWithConnections = Consumer & {
+        connections: Connection[];
+      };
+
+      const consumer = (await Consumer.findOne({
         where: { consumerNumber },
         attributes: [
           "name",
@@ -110,7 +115,21 @@ export class ConsumerSearchController {
           "mobileNumber",
           "address",
         ],
-      });
+        include: [
+          {
+            model: Connection,
+            as: "connections",
+            attributes: [
+              "connectionId",
+              "connectionType",
+              "status",
+              "pipeSize",
+              "connectionNumber",
+              "serviceStartDate",
+            ],
+          },
+        ],
+      })) as unknown as ConsumerWithConnections | null;
 
       if (!consumer) {
         return res.status(404).json({
@@ -132,6 +151,7 @@ export class ConsumerSearchController {
               consumer.address.pincode || ""
             }`.trim()
           : "N/A",
+        connections: consumer.connections || [],
       };
 
       return res.status(200).json({
