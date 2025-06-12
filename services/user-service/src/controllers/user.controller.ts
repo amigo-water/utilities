@@ -30,6 +30,20 @@ interface LoginRequest {
   otp: string;
 }
 
+type IdentifierType = 'email' | 'phone' ;
+
+
+export function isEmail(value: string): boolean {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(value);
+}
+
+export function isPhone(value: string): boolean {
+  const phoneRegex = /^[0-9]{10}$/;
+  return phoneRegex.test(value);
+}
+
+
 export class UserController {
   public readonly JWT_SECRET: string = process.env.JWT_SECRET || "";
   public readonly JWT_EXPIRES_IN: string = "24h";
@@ -44,7 +58,7 @@ export class UserController {
       pass: process.env.SMTP_PASSWORD,
     },
   });
-
+ 
   private kafkaService: KafkaService;
 
   constructor() {
@@ -63,6 +77,7 @@ export class UserController {
   }
 
   private async storeOTP(identifier: string, otp: string, userId?: string): Promise<void> {
+    console.log(`Storing OTP for identifier: ${identifier} in database`);
     try {
       const expiresAt = new Date(Date.now() + this.OTP_EXPIRES_IN_MINUTES * 60 * 1000);
       // Consider invalidating previous active OTPs for the same identifier
@@ -141,24 +156,56 @@ export class UserController {
 
   async requestOTP(req: Request, res: Response) {
     try {
-      const { identifier, type, password } = req.body as {
+      const { identifier, password } = req.body as {
         identifier: string;
-        type: "email" | "phone";
         password: string;
       };
-
-
-      if (!identifier || !type || !password) {
+      
+      if (!identifier || !password) {
         return res
           .status(400)
-          .json({ message: "Identifier, type, and password are required" });
+          .json({ message: "Identifier, and password are required" });
       }
 
-      const user = await User.findOne({
+      function getIdentifierType(identifier: string): IdentifierType | null {
+        if (isEmail(identifier)) return 'email';
+        if (isPhone(identifier)) return 'phone';
+        return null;
+      }
+
+      const type: IdentifierType | null = getIdentifierType(identifier);
+
+      // Validate email format if type is email
+      if (type === "email" && !isEmail(identifier)) {
+        return res.status(400).json({ message: "Invalid email format" });
+      } else if (type === "phone" && !isPhone(identifier)) {
+        // Validate phone number format if type is phone
+        return res.status(400).json({ message: "Invalid phone number format" });
+      } else if (type === null) {
+        // Default error case for invalid or undefined type
+        return res.status(400).json({ message: "Invalid identifier type" });
+      }
+
+      console.log("requestOTP",identifier,type,password)
+
+
+      let user: IUser | null;
+
+      if(type === "email"){
+         user = await User.findOne({
         where: {
           "contact_info.email": identifier,
         },
       });
+      } else{
+        user = await User.findOne({
+        where: {
+          "contact_info.phone": identifier,
+        },
+      })  as IUser | null;  
+      }
+      
+    console.log("req-erro:",user)
 
       if (!user) {
         return res.status(401).json({ message: "User not found or invalid credentials" });
@@ -170,21 +217,12 @@ export class UserController {
       }
 
 
-      // Validate email format if type is email
-      if (type === "email" && !identifier.includes("@")) {
-        return res.status(400).json({ message: "Invalid email format" });
-      }
-
-      // Validate phone number format if type is phone
-      if (type === "phone" && !/^[+]?[0-9]{10,}$/.test(identifier)) {
-        return res.status(400).json({ message: "Invalid phone number format" });
-      }
-
       const otpGenerated = this.generateOTP();
 
       // Store OTP with identifier (and optionally userId if available)
       await this.storeOTP(identifier, otpGenerated, user?.user_id);
 
+      console.log(otpGenerated)
       // Send OTP based on type
       switch (type) {
         case "email":
@@ -240,8 +278,16 @@ export class UserController {
         return res
           .status(400)
           .json({
-            message: "At least one contact method (email or phone) is required",
+            message: "Both email and phone are required.",
           });
+      }
+
+        // Validate phone number format if type is phone
+      if (role === "email" && !isEmail(contact_info?.email) && !isPhone(contact_info?.phone)) {
+        return res.status(400).json({ message: "Invalid phone number format1" });
+      } else if  (role === "phone" && !isPhone(contact_info?.phone)) {
+        // Validate phone number format if type is phone
+        return res.status(400).json({ message: "Invalid phone number format2" });
       }
 
       // Check if username already exists
@@ -318,14 +364,26 @@ export class UserController {
 
   async login(req: Request, res: Response) {
     try {
-      const { identifier, password, type, otp } = req.body as LoginRequest;
+      const { identifier, password, otp } = req.body as LoginRequest;
 
-      if (!identifier || !password || !type || !otp) {
-        return res.status(400).json({ message: "Identifier, password, type, and OTP are required" });
+      if (!identifier || !password  || !otp) {
+        return res.status(400).json({ message: "Identifier, password, and OTP are required" });
       }
 
       let user: IUser | null = null;
 
+
+      let type: IdentifierType;
+      
+      if (isEmail(identifier)) {
+          type = "email";
+      } else if (isPhone(identifier)) {
+          type = "phone";
+      } else {
+        throw new Error("Invalid identifier: must be a valid email or phone number");
+      }
+
+    
       // Find user based on identifier type
       switch (type) {
         case "email":
@@ -342,15 +400,8 @@ export class UserController {
             },
           });
           break;
-        case "username":
-          user = await User.findOne({
-            where: {
-              username: identifier,
-            },
-          });
-          break;
         default:
-          return res.status(400).json({ message: "Invalid type" });
+          return res.status(400).json({ message: "Invalid identifier: must be a valid email or phone number" });
       }
 
       if (!user) {
@@ -411,7 +462,10 @@ export class UserController {
         token,
       });
     } catch (error) {
-      res.status(500).json({ message: "Error during login", error: error });
+      res.status(500).json({ 
+        message: "Error during login",  
+        error: error instanceof Error ? error.message : String(error), 
+      });
     }
   }
 
@@ -776,3 +830,4 @@ export class UserController {
     }
   }
 }
+
