@@ -98,7 +98,7 @@ export class ConsumerSearchController {
 
   public async getConsumerDetails(req: Request, res: Response) {
     try {
-      const { consumerNumber } = req.body;
+      const { consumerNumber } = req.query;
 
       if (!consumerNumber) {
         return res.status(400).json({
