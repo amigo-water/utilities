@@ -99,11 +99,11 @@ export class ConsumerSearchController {
   public async getConsumerDetails(req: Request, res: Response) {
     try {
       const { consumerNumber } = req.query;
-
-      if (!consumerNumber) {
+      
+      if (!consumerNumber || typeof consumerNumber !== 'string') {
         return res.status(400).json({
           success: false,
-          message: "Consumer number is required",
+          message: "Consumer number is required as a query parameter",
         });
       }
 
