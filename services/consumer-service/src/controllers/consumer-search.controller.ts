@@ -100,10 +100,10 @@ export class ConsumerSearchController {
     try {
       const { consumerNumber } = req.query;
 
-      if (!consumerNumber) {
+      if (!consumerNumber || typeof consumerNumber !== "string") {
         return res.status(400).json({
           success: false,
-          message: "Consumer number is required",
+          message: "Consumer number is required in query params",
         });
       }
 
