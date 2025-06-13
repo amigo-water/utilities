@@ -74,7 +74,14 @@ export class ConsumerSearchController {
         order: [["createdAt", "DESC"]],
       });
 
-      return res.json({
+      if (!consumers || consumers.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: "No consumers found matching the search criteria",
+        });
+      }
+
+      return res.status(200).json({
         success: true,
         data: consumers,
         count: consumers.length,
