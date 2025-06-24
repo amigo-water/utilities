@@ -5,6 +5,19 @@ import Connection from "../models/connection.model";
 import ConsumerCategory from "../models/consumer-category.model";
 import OrganizationUnit from "../models/organization-unit.model";
 
+interface UpdateConsumerProfileBody {
+  consumerNumber: string;
+  name?: string;
+  status?: string;
+}
+
+interface UpdateConsumerContactBody {
+  consumerNumber: string;
+  mobile?: string;
+  email?: string;
+  address?: string;
+}
+
 export class ConsumerSearchController {
   public async searchConsumers(req: Request, res: Response) {
     try {
@@ -208,6 +221,97 @@ export class ConsumerSearchController {
       return res.status(500).json({
         success: false,
         message: "Failed to fetch consumer connections",
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  }
+
+  public async updateConsumerProfile(req: Request, res: Response) {
+    try {
+      const { consumerNumber, name, status } =
+        req.body as UpdateConsumerProfileBody;
+
+      if (!consumerNumber) {
+        return res.status(400).json({
+          success: false,
+          message: "consumerNumber is required to update the consumer profile",
+        });
+      }
+
+      const consumer = await Consumer.findOne({
+        where: { consumerNumber },
+      });
+
+      if (!consumer) {
+        return res.status(404).json({
+          success: false,
+          message: "Consumer not found",
+        });
+      }
+
+      // Update the fields only if provided
+      if (name) consumer.name = name;
+      if (status) consumer.status = status;
+
+      await consumer.save();
+
+      return res.status(200).json({
+        success: true,
+        message: "Consumer profile updated successfully",
+        data: consumer,
+      });
+    } catch (error) {
+      console.error("Error updating consumer profile:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to update consumer profile",
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  }
+
+  public async updateConsumerContact(req: Request, res: Response) {
+    try {
+      const { consumerNumber, mobile, email, address } =
+        req.body as UpdateConsumerContactBody;
+
+      if (!consumerNumber) {
+        return res.status(400).json({
+          success: false,
+          message: "consumerNumber is required to update the consumer contact",
+        });
+      }
+
+      const consumer = await Consumer.findOne({
+        where: { consumerNumber },
+      });
+
+      if (!consumer) {
+        return res.status(404).json({
+          success: false,
+          message: "Consumer not found",
+        });
+      }
+
+      // Update the fields only if provided
+      if (mobile) consumer.mobileNumber = mobile;
+      if (email) consumer.email = email;
+      if (address && typeof address === "object") {
+        consumer.address = address;
+      }
+
+      await consumer.save();
+
+      return res.status(200).json({
+        success: true,
+        message: "Consumer contact updated successfully",
+        data: consumer,
+      });
+    } catch (error) {
+      console.error("Error updating consumer contact:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to update consumer contact",
         error: error instanceof Error ? error.message : "Unknown error",
       });
     }
