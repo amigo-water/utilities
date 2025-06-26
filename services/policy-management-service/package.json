@@ -4,10 +4,10 @@
   "description": "Service for managing policies, tariffs, and rules",
   "main": "dist/index.js",
   "scripts": {
-    "start": "env-cmd -f .env.dev node dist/index.js",
-    "build": "tsc",
-    "dev": "env-cmd -f .env.local ts-node-dev --respawn --transpile-only --require tsconfig-paths/register src/index.ts",
-    "prod": "env-cmd -f .env.prod ts-node-dev --respawn --transpile-only src/index.ts",
+    "build": "echo 'JavaScript project - no build step required'",
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "prod": "env-cmd -f .env.prod node src/index.js",
     "test": "jest"
   },
   "dependencies": {
@@ -17,6 +17,7 @@
     "express": "^4.18.2",
     "express-validator": "^7.0.1",
     "helmet": "^7.1.0",
+    "json-logic-js": "^2.0.5",
     "pg": "^8.11.0",
     "sequelize": "^6.35.1",
     "winston": "^3.11.0"
@@ -26,6 +27,10 @@
     "@types/express": "^5.0.2",
     "@types/node": "^22.15.21",
     "jest": "^29.7.0",
-    "nodemon": "^3.1.9"
+    "nodemon": "^3.1.10",
+    "ts-node": "^10.9.2",
+    "ts-node-dev": "^2.0.0",
+    "tsconfig-paths": "^4.2.0",
+    "typescript": "^5.8.3"
   }
 }

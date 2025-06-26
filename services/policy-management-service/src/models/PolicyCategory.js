@@ -16,6 +16,16 @@ const PolicyCategory = sequelize.define('PolicyCategory', {
   },
   utility_type_id: {
     type: DataTypes.UUID
+  },
+  created_at: {
+    type: DataTypes.DATE,
+    allowNull: false,
+    defaultValue: DataTypes.NOW
+  },
+  updated_at: {
+    type: DataTypes.DATE,
+    allowNull: false,
+    defaultValue: DataTypes.NOW
   }
 }, {
   tableName: 'policy_categories',

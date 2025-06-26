@@ -29,11 +29,11 @@ const Policy = sequelize.define('Policy', {
     allowNull: false
   },
   status: {
-    type: DataTypes.ENUM('Draft', 'Active', 'Inactive', 'Archived'),
+    type: DataTypes.STRING(50),
     allowNull: false
   },
   approval_status: {
-    type: DataTypes.ENUM('Pending', 'Approved', 'Rejected')
+    type: DataTypes.STRING(50)
   },
   category_id: {
     type: DataTypes.UUID,
@@ -54,12 +54,21 @@ const Policy = sequelize.define('Policy', {
   },
   metadata: {
     type: DataTypes.JSONB
+  },
+  created_at: {
+    type: DataTypes.DATE,
+    defaultValue: DataTypes.NOW
+  },
+  updated_at: {
+    type: DataTypes.DATE,
+    defaultValue: DataTypes.NOW
   }
 }, {
   tableName: 'policies',
-  timestamps: true,
-  createdAt: 'created_at',
-  updatedAt: 'updated_at'
+  timestamps: true, 
+  underscored: true, 
+  createdAt: 'created_at', 
+  updatedAt: 'updated_at'  
 });
 
 module.exports = Policy; 
