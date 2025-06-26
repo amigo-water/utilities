@@ -39,4 +39,14 @@ router.get(
   consumerSearchController.getConsumerConnections.bind(consumerSearchController)
 );
 
+router.patch(
+  "/updateConsumerProfile",
+  consumerSearchController.updateConsumerProfile.bind(consumerSearchController)
+);
+
+router.patch(
+  "/updateConsumerContact",
+  consumerSearchController.updateConsumerContact.bind(consumerSearchController)
+);
+
 export default router;

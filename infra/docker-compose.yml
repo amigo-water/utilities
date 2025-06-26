@@ -42,9 +42,10 @@ services:
     depends_on:
       - zookeeper
     environment:
-      KAFKA_HEAP_OPTS: "-Xmx512m -Xms512m"
+      KAFKA_HEAP_OPTS: "-Xmx1024m -Xms1024m"
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
     volumes:
@@ -54,7 +55,7 @@ services:
     networks:
       - app-network
     healthcheck:
-      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
