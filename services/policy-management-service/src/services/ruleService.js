@@ -67,6 +67,7 @@ exports.defineRule = async (policyId, ruleGroupData, ruleData, exceptions = []) 
 
 
 exports.createRule = async (ruleData) => {
+  console.log(ruleData);
   const ruleId = uuidv4();
 
   const newRule = await Rule.create({
