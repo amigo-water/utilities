@@ -1,23 +1,24 @@
-const PolicyCategory = require('./PolicyCategory');
-const Policy = require('./Policy');
-const PolicyVersion = require('./PolicyVersion');
-const TariffPlan = require('./TariffPlan');
-const TariffComponent = require('./TariffComponent');
-const RuleGroup = require('./RuleGroup');
-const Rule = require('./Rule');
-const RuleException = require('./RuleException');
-const RuleEvaluationContext = require('./RuleEvaluationContext');
-const RuleEvaluation = require('./RuleEvaluation');
-const RuleExecutionStats = require('./RuleExecutionStats');
+// src/models/index.ts
+import Policy from './policy.model';
+import PolicyCategory from './policy-category.model';
+import PolicyVersion from './policy-version.model';
+import RuleGroup from './rule-group.model';
+import Rule from './rule.model';
+import RuleEvaluation from './rule-evaluation.model';
+import RuleException from './rule-exception.model';
+import RuleExecutionStats from './rule-execution-stats.model';
+import RuleEvaluationContext from './rule-evaluation-context.model';
+import TariffPlan from './tariff-plan.model';
+import TariffComponent from './tariff-component.model';
 
-// Policy Management Relationships
+// Define associations after model imports
+
 Policy.belongsTo(PolicyCategory, { foreignKey: 'category_id' });
 PolicyCategory.hasMany(Policy, { foreignKey: 'category_id' });
 
 Policy.hasMany(PolicyVersion, { foreignKey: 'policy_id' });
 PolicyVersion.belongsTo(Policy, { foreignKey: 'policy_id' });
 
-// Rule Management Relationships
 Policy.hasMany(RuleGroup, { foreignKey: 'policy_id' });
 RuleGroup.belongsTo(Policy, { foreignKey: 'policy_id' });
 
@@ -33,27 +34,25 @@ RuleException.belongsTo(Rule, { foreignKey: 'rule_id' });
 Rule.hasOne(RuleExecutionStats, { foreignKey: 'rule_id' });
 RuleExecutionStats.belongsTo(Rule, { foreignKey: 'rule_id' });
 
-// Tariff Management Relationships
 TariffPlan.hasMany(TariffComponent, { foreignKey: 'tariff_plan_id' });
 TariffComponent.belongsTo(TariffPlan, { foreignKey: 'tariff_plan_id' });
 
-// Rule Evaluation Relationships
 Rule.hasMany(RuleEvaluation, { foreignKey: 'rule_id' });
 RuleEvaluation.belongsTo(Rule, { foreignKey: 'rule_id' });
 
 Policy.hasMany(RuleEvaluation, { foreignKey: 'policy_id' });
 RuleEvaluation.belongsTo(Policy, { foreignKey: 'policy_id' });
 
-module.exports = {
-  PolicyCategory,
+export {
   Policy,
+  PolicyCategory,
   PolicyVersion,
-  TariffPlan,
-  TariffComponent,
   RuleGroup,
   Rule,
-  RuleException,
-  RuleEvaluationContext,
   RuleEvaluation,
-  RuleExecutionStats
-}; 
+  RuleException,
+  RuleExecutionStats,
+  RuleEvaluationContext,
+  TariffPlan,
+  TariffComponent,
+};

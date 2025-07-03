@@ -1,7 +1,8 @@
-const { Sequelize } = require('sequelize');
-require('dotenv').config();
+import { Sequelize } from 'sequelize';
+import dotenv from 'dotenv';
+dotenv.config();
 
-const sequelize = new Sequelize(process.env.DATABASE_URL || 'postgres://postgres:root@localhost:5432/Policies', {
+ const sequelize = new Sequelize(process.env.DATABASE_URL || 'postgres://postgres:root@localhost:5432/Policies', {
   dialect: 'postgres',
   logging: false,
   pool: {
@@ -18,4 +19,4 @@ const sequelize = new Sequelize(process.env.DATABASE_URL || 'postgres://postgres
   }
 });
 
-module.exports = sequelize; 
+export default sequelize;

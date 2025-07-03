@@ -324,32 +324,50 @@
 
 
 
-const Policy = require('../models/Policy');
-const { v4: uuidv4 } = require('uuid');
-const PolicyCategory = require('../models/PolicyCategory');
+import { v4 as uuidv4 } from 'uuid';
+import Policy from '../models/policy.model';
+import PolicyCategory from '../models/policy-category.model';
 
+interface CreatePolicyWithCategoryDTO {
+  name: string;
+  version: string;
+  status: string;
+  effectiveFrom: Date;
+  effectiveTo?: Date;
+  description?: string;
+  externalId?: string;
+  approvalStatus?: string;
+  categoryId: string;
+  utilityTypeId?: string;
+  createdBy: string;
+  approvedBy?: string;
+  metadata?: Record<string, any>;
+}
 
-exports.createPolicyWithCategory = async (data) => {
-    // console.log(data);
+export class PolicyService {
+  async createPolicyWithCategory(data: CreatePolicyWithCategoryDTO) {
     const policyCategory = await PolicyCategory.findByPk(data.categoryId);
     if (!policyCategory) {
       throw new Error('Invalid categoryId: category does not exist');
     }
-  const policy = await Policy.create({
-    id: uuidv4(),
-    externalId: data.externalId || null,
-    name: data.name,
-    description: data.description || null,
-    effective_from: data.effectiveFrom,
-    effective_to: data.effectiveTo || null,
-    version: data.version,
-    status: data.status,
-    approval_status: data.approvalStatus || 'Pending',
-    category_id: data.categoryId || null,
-    utility_type_id: data.utilityTypeId || null,
-    created_by: data.createdBy,
-    approved_by: data.approvedBy || null,
-    metadata: data.metadata || {}
-  });
-  return policy;
-};
+
+const policy = await Policy.create({
+  external_id: data.externalId ?? undefined,
+  name: data.name,
+  description: data.description ?? undefined,
+  effective_from: data.effectiveFrom,
+  effective_to: data.effectiveTo ?? undefined,
+  version: parseFloat(data.version),
+  status: data.status as 'Draft' | 'Active' | 'Inactive' | 'Archived',
+  approval_status: (data.approvalStatus ?? 'Pending') as 'Pending' | 'Approved' | 'Rejected',
+  category_id: data.categoryId ?? undefined,
+  utility_type_id: data.utilityTypeId ?? undefined,
+  created_by: data.createdBy,
+  approved_by: data.approvedBy ?? undefined,
+  metadata: data.metadata ?? {}
+});
+    return policy;
+  }
+}
+
+export const policyService = new PolicyService();
