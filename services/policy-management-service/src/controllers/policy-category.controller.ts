@@ -6,6 +6,7 @@ export class PolicyCategoryController {
 
   async createCategory(req: Request, res: Response) {
     try {
+      console.log(req.body);
       const { name, utilityTypeId } = req.body;
 
       if (!name || !utilityTypeId) {
