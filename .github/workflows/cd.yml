@@ -112,22 +112,85 @@ jobs:
 
       - name: Deploy Infrastructure
         run: |
-          echo "🔄 Infrastructure changed, restarting components..."
+          set -e  # Exit on error
+          echo "🔄 Infrastructure changed, managing components..."
           cd infra
           export IMAGE_TAG=${{ needs.detect-changes.outputs.short_sha }}
           
-          # Stop and remove infrastructure services
-          docker-compose stop kafka zookeeper postgres nginx || true
-          docker-compose rm -f kafka zookeeper postgres nginx || true
+          # Function to check if container exists
+          container_exists() {
+            docker ps -a --filter "name=^$1$" --format '{{.Names}}' | grep -q "^$1$"
+          }
           
-          # Start infrastructure services
-          docker-compose up -d kafka zookeeper postgres
+          # Function to check if container is running
+          container_running() {
+            docker ps --filter "name=^$1$" --format '{{.Names}}' | grep -q "^$1$"
+          }
           
-          # Wait for services to be ready before starting Nginx
-          echo "⏳ Waiting for services to be ready..."
-          sleep 30
+          # Start Nginx first if it doesn't exist or isn't running
+          if ! container_running "nginx"; then
+            echo "🚀 Starting Nginx for the first time..."
+            if ! container_exists "nginx"; then
+              docker-compose up -d nginx
+            else
+              docker-compose start nginx || docker-compose up -d nginx
+            fi
+            echo "✅ Nginx started successfully"
+          else
+            echo "ℹ️ Nginx is already running"
+          fi
           
-          # Start Nginx
-          docker-compose up -d nginx
+          # Stop and remove other infrastructure services if they exist
+          for service in kafka zookeeper postgres; do
+            echo "🔄 Processing $service..."
+            if container_running "$service"; then
+              echo "🛑 Stopping $service..."
+              docker-compose stop "$service" || true
+              echo "🗑️  Removing $service..."
+              docker-compose rm -f "$service" || true
+            fi
+          done
           
-          echo "✅ Infrastructure redeployed"
+          # Start core infrastructure services
+          echo "🚀 Starting core infrastructure services..."
+          docker-compose up -d zookeeper
+          
+          # Wait for Zookeeper to be ready
+          echo "⏳ Waiting for Zookeeper to be ready..."
+          until docker-compose exec -T zookeeper zkServer.sh status > /dev/null 2>&1; do
+            sleep 5
+            echo "⏳ Waiting for Zookeeper..."
+          done
+          
+          # Start Kafka
+          echo "🚀 Starting Kafka..."
+          docker-compose up -d kafka
+          
+          # Start Postgres
+          echo "🚀 Starting Postgres..."
+          docker-compose up -d postgres
+          
+          # Wait for Postgres to be ready
+          echo "⏳ Waiting for Postgres to be ready..."
+          until docker-compose exec -T postgres pg_isready -U postgres > /dev/null 2>&1; do
+            sleep 5
+            echo "⏳ Waiting for Postgres..."
+          done
+          
+          # Restart Nginx to ensure it picks up any configuration changes
+          echo "🔄 Restarting Nginx to apply any configuration changes..."
+          docker-compose restart nginx
+          
+          # Verify all services are up
+          echo "✅ Verifying services are running..."
+          for service in zookeeper kafka postgres nginx; do
+            if container_running "$service"; then
+              echo "✅ $service is running"
+            else
+              echo "❌ $service failed to start"
+              docker-compose logs "$service" --tail=20
+              exit 1
+            fi
+          done
+          
+          echo "✅ Infrastructure deployment completed successfully!"
