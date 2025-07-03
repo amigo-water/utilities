@@ -2,7 +2,7 @@ import express from "express";
 import dotenv from 'dotenv';
 import cors from 'cors';
 import helmet from 'helmet';
-import './models/index.ts';
+import './models/index';
 import policyRoutes from './routes/policy.routes'
 import ruleRoutes from './routes/rule.routes'
 

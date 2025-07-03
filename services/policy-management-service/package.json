@@ -2,7 +2,7 @@
   "name": "policy-management-service",
   "version": "1.0.0",
   "description": "Service for managing policies, tariffs, and rules",
-  "main": "src/index.js",
+  "main": "dist/index.js",
   "scripts": {
     "start": "env-cmd -f .env.dev node dist/index.js",
     "build": "tsc",
