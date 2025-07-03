@@ -102,47 +102,47 @@ jobs:
           echo "✅ $SERVICE deployed with SHA: $SHORT_SHA"
           
 
- deploy-infrastructure:
-   needs: detect-changes
-   runs-on: self-hosted
-   if: ${{ needs.detect-changes.outputs.infra_changed == 'true' }}
-   steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+  deploy-infrastructure:
+    needs: detect-changes
+    runs-on: self-hosted
+    if: ${{ needs.detect-changes.outputs.infra_changed == 'true' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Deploy Infrastructure
-      run: |
-        echo "🔄 Infrastructure changed, managing components..."
-        cd infra
-        export IMAGE_TAG=${{ needs.detect-changes.outputs.short_sha }}
+      - name: Deploy Infrastructure
+        run: |
+          echo "🔄 Infrastructure changed, managing components..."
+          cd infra
+          export IMAGE_TAG=${{ needs.detect-changes.outputs.short_sha }}
         
-        # Function to check if container is running
-        container_running() {
-          docker ps --filter "name=^$1$" --format '{{.Names}}' | grep -q "^$1$"
-        }
+          # Function to check if container is running
+          container_running() {
+            docker ps --filter "name=^$1$" --format '{{.Names}}' | grep -q "^$1$"
+          }
         
-        # Stop and remove only running services
-        for service in kafka zookeeper postgres nginx; do
-          if container_running "$service"; then
-            echo "🛑 Stopping $service..."
-            docker-compose stop "$service" || true
-            echo "🗑️  Removing $service..."
-            docker-compose rm -f "$service" || true
-          else
-            echo "ℹ️ $service is not running, skipping stop/remove"
-          fi
-        done
+          # Stop and remove only running services
+          for service in kafka zookeeper postgres nginx; do
+            if container_running "$service"; then
+              echo "🛑 Stopping $service..."
+              docker-compose stop "$service" || true
+              echo "🗑️  Removing $service..."
+              docker-compose rm -f "$service" || true
+            else
+              echo "ℹ️ $service is not running, skipping stop/remove"
+            fi
+          done
         
-        # Start core services
-        echo "🚀 Starting core services..."
-        docker-compose up -d kafka zookeeper postgres
+          # Start core services
+          echo "🚀 Starting core services..."
+          docker-compose up -d kafka zookeeper postgres
         
-        # Wait for services to be ready
-        echo "⏳ Waiting for services to initialize..."
-        sleep 15
+          # Wait for services to be ready
+          echo "⏳ Waiting for services to initialize..."
+          sleep 15
         
-        # Start Nginx
-        echo "🚀 Starting Nginx..."
-        docker-compose up -d nginx
+          # Start Nginx
+          echo "🚀 Starting Nginx..."
+          docker-compose up -d nginx
         
-        echo "✅ Infrastructure redeployed with Nginx"
+          echo "✅ Infrastructure redeployed with Nginx"
