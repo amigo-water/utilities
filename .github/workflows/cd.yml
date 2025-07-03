@@ -116,8 +116,18 @@ jobs:
           cd infra
           export IMAGE_TAG=${{ needs.detect-changes.outputs.short_sha }}
           
-          docker-compose stop kafka zookeeper postgres || true
-          docker-compose rm -f kafka zookeeper postgres || true
+          # Stop and remove infrastructure services
+          docker-compose stop kafka zookeeper postgres nginx || true
+          docker-compose rm -f kafka zookeeper postgres nginx || true
+          
+          # Start infrastructure services
           docker-compose up -d kafka zookeeper postgres
+          
+          # Wait for services to be ready before starting Nginx
+          echo "⏳ Waiting for services to be ready..."
+          sleep 30
+          
+          # Start Nginx
+          docker-compose up -d nginx
           
           echo "✅ Infrastructure redeployed"
