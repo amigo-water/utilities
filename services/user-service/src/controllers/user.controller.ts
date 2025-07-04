@@ -2,17 +2,21 @@ import { Request, Response } from "express";
 import { User, UserRole, IUser, LoginHistory } from "../models/user.model";
 import { v4 as uuidv4 } from "uuid";
 import nodemailer from "nodemailer";
+import { AuthService} from '@shared/auth-service';
+import {role} from '@shared/middleware/auth.middleware';
 import bcrypt from "bcryptjs";
-import * as jwt from "jsonwebtoken";
 import { KafkaService } from '../services/kafka.service';
 import { messagingService } from '../services/messaging.service';
 import { Otp } from '../models/otp.model';
 
-// Extend Express Request type to include user property
 declare global {
   namespace Express {
     interface Request {
-      user?: IUser;
+      user?: {
+        [key: string]: any;
+        id: string;
+        role: role | string;
+      };
     }
   }
 }
@@ -59,9 +63,11 @@ export class UserController {
     },
   });
  
+  private authService: AuthService;
   private kafkaService: KafkaService;
 
   constructor() {
+    this.authService = new AuthService();
     this.kafkaService = KafkaService.getInstance();
     // Bind methods to ensure proper 'this' context
     this.generateOTP = this.generateOTP.bind(this);
@@ -324,12 +330,13 @@ export class UserController {
         role_name: role,
       });
 
-      // Generate JWT token
-      // const token = jwt.sign(
-      //   { user_id: user.user_id },
-      //   jwtService.getSecret(),
-      //   { expiresIn: this.JWT_EXPIRES_IN }
-      // );
+
+
+      const token = AuthService.generateAuthToken({
+        role: user.role as role,
+        id: user.user_id,
+      });
+      // req.token = token;
       await this.kafkaService.publish('user.created', {
         userId: user.user_id,
         email: user.contact_info.email,
@@ -350,7 +357,7 @@ export class UserController {
           status: user.status,
           created_at: user.created_at,
         },
-        // token,
+        token,
       });
     } catch (error) {
       console.error("Registration error:", error); // Add this line to see the actual error
@@ -440,12 +447,18 @@ export class UserController {
       });
 
 
-      // Generate JWT token
-      const token = jwt.sign(
-        { user_id: user.user_id },
-        process.env.JWT_SECRET as string,
-        { expiresIn: "24h" }
-      );
+      // // Generate JWT token
+      // const token = jwt.sign(
+      //   { user_id: user.user_id },
+      //   process.env.JWT_SECRET as string,
+      //   { expiresIn: "24h" }
+      // );
+      const token =  AuthService.generateToken({ id: user.user_id ,
+        role: user.role as role,
+      });
+
+
+
 
       res.json({
         message: "Login successful",

@@ -87,6 +87,7 @@ Connection.init(
 
 // Import this after model definition to avoid circular dependency
 import Consumer from './consumer.model';
+import OrganizationUnit from './organization-unit.model';
 
 // Add association after import
 Connection.belongsTo(Consumer, {
@@ -94,4 +95,9 @@ Connection.belongsTo(Consumer, {
   as: 'consumer',
 });
 
+
+Connection.belongsTo(OrganizationUnit, {
+  foreignKey: 'organizationUnitId',
+  as: 'organizationUnit',
+});
 export default Connection;
