@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { User, UserRole, IUser, LoginHistory } from "../models/user.model";
+import { User, IUser, LoginHistory } from "../models/user.model";
 import { v4 as uuidv4 } from "uuid";
 import nodemailer from "nodemailer";
 import { AuthService} from '@shared/auth-service';
@@ -324,11 +324,11 @@ export class UserController {
         updatedAt: new Date(),
       });
 
-      // Create user role
-      await UserRole.create({
-        user_id: user.user_id,
-        role_name: role,
-      });
+      // // Create user role
+      // await UserRole.create({
+      //   user_id: user.user_id,
+      //   role_name: role,
+      // });
 
 
 
@@ -568,7 +568,7 @@ export class UserController {
         return res.status(404).json({ message: "User not found" });
       }
 
-      const userRoles = await UserRole.find({ user_id: userId });
+      // const userRoles = await UserRole.find({ user_id: userId });
 
       res.json({
         user: {
@@ -581,10 +581,7 @@ export class UserController {
           status: user?.status,
           created_at: user?.createdAt,
           updated_at: user?.updatedAt,
-          roles: userRoles.map((role: any) => ({
-            role_name: role.role_name,
-            assigned_at: role.assigned_at,
-          })),
+          roles: [],
         },
       });
     } catch (error) {
@@ -684,163 +681,7 @@ export class UserController {
     }
   }
 
-  async createRole(req: Request, res: Response) {
-    try {
-      const { userId, roleName } = req.body;
 
-      if (!userId || !roleName) {
-        return res
-          .status(400)
-          .json({ message: "User ID and role name are required" });
-      }
-
-      const user = await User.findById(userId);
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-
-      // Check if role already exists for this user
-      const existingRole = await UserRole.findOne({
-        where: {
-          user_id: userId,
-          role_name: roleName,
-        },
-      });
-
-      if (existingRole) {
-        return res
-          .status(400)
-          .json({ message: "Role already exists for this user" });
-      }
-
-      const role = await UserRole.create({
-        user_id: userId,
-        role_name: roleName,
-      });
-
-      await this.kafkaService.publish('role.created', {
-        userId,
-        role_name: roleName,
-        eventType: 'role.created',
-      });
-
-      res.status(201).json({
-        message: "Role created successfully",
-        role: {
-          id: role.id,
-          user_id: role.user_id,
-          role_name: role.role_name,
-          assigned_at: role.assigned_at,
-        },
-      });
-    } catch (error) {
-      res.status(500).json({ message: "Error creating role", error });
-    }
-  }
-
-  async updateRole(req: Request, res: Response) {
-    try {
-      const { roleId, roleName } = req.body;
-
-      if (!roleId || !roleName) {
-        return res
-          .status(400)
-          .json({ message: "Role ID and role name are required" });
-      }
-
-      const role = await UserRole.findByPk(roleId);
-      if (!role) {
-        return res.status(404).json({ message: "Role not found" });
-      }
-
-      await role.update({
-        role_name: roleName,
-      });
-
-      await this.kafkaService.publish('role.updated', {
-        userId: role.user_id,
-        role_name: roleName,
-        eventType: 'role.updated',
-      });
-
-      res.json({
-        message: "Role updated successfully",
-        role: {
-          id: role.id,
-          user_id: role.user_id,
-          role_name: role.role_name,
-          assigned_at: role.assigned_at,
-        },
-      });
-    } catch (error) {
-      res.status(500).json({ message: "Error updating role", error });
-    }
-  }
-
-  async deleteRole(req: Request, res: Response) {
-    try {
-      const { roleId } = req.params;
-
-      if (!roleId) {
-        return res.status(400).json({ message: "Role ID is required" });
-      }
-
-      const role = await UserRole.findByPk(roleId);
-      if (!role) {
-        return res.status(404).json({ message: "Role not found" });
-      }
-
-      await role.destroy();
-
-      await this.kafkaService.publish('role.deleted', {
-        userId: role.user_id,
-        role_name: role.role_name,
-        eventType: 'role.deleted',
-      });
-
-        res.json({ message: "Role deleted successfully" });
-    } catch (error) {
-      res.status(500).json({ message: "Error deleting role", error });
-    }
-  }
-
-  async getRoles(req: Request, res: Response) {
-    try {
-      const userId = req.query.userId as string | undefined;
-
-      let roles;
-      if (userId) {
-        roles = await UserRole.findAll({
-          where: { user_id: userId },
-          include: [
-            {
-              model: User,
-              attributes: ["user_id", "username", "name"],
-            },
-          ],
-        });
-      } else {
-        roles = await UserRole.findAll({
-          include: [
-            {
-              model: User,
-              attributes: ["user_id", "username", "name"],
-            },
-          ],
-        });
-      }
-
-      res.json({
-        roles: roles.map((role) => ({
-          id: role.id,
-          user_id: role.user_id,
-          role_name: role.role_name,
-          assigned_at: role.assigned_at,
-        })),
-      });
-    } catch (error) {
-      res.status(500).json({ message: "Error fetching roles", error });
-    }
-  }
+ 
 }
 

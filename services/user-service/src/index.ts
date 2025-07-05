@@ -2,8 +2,8 @@ import express from 'express';
 import dotenv from 'dotenv';
 import  sequelize from './config/database';
 import userRoutes from './routes/user.routes';
-import { User, UserRole } from './models/user.model';
-import { Otp } from './models/otp.model';  // Add this import
+import { User } from './models/user.model';
+import { Otp } from './models/otp.model';  
 
 
 dotenv.config();
@@ -30,7 +30,6 @@ sequelize.authenticate()
     // Set up associations
     const models = {
       User,
-      UserRole,
       Otp
     };
 
