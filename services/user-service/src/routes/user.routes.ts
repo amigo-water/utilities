@@ -17,16 +17,10 @@ router.put('/password', verifyToken, (req: Request, res: Response) => userContro
 router.post('/logout', verifyToken, (req: Request, res: Response) => userController.logout(req, res));
 
 
-// router.post('/roles', verifyToken, requireAdmin, (req: Request, res: Response) => 
-//   userController.createRole(req, res)
-// );
-
-// router.put('/roles/:id', verifyToken, requireSuperAdmin, (req: Request, res: Response) => 
-//   userController.updateRole(req, res)
-// );
-
-// router.delete('/roles/:id', verifyToken, requireSuperAdmin, (req: Request, res: Response) => 
-//   userController.deleteRole(req, res)
-// );
+router.post('/create-users',userController.createUser);
+router.post('/common-details',userController.createCommonDetails); 
+router.get('/roles-details',userController.getAllRolesDetails); 
+router.get('/roles/types',verifyToken,userController.getRoleTypes) 
+router.delete('/common-details',userController.deleteCommonDetail);
 
 export default router;
