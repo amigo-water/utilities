@@ -17,10 +17,10 @@ router.put('/password', verifyToken, (req: Request, res: Response) => userContro
 router.post('/logout', verifyToken, (req: Request, res: Response) => userController.logout(req, res));
 
 
-router.post('/create-users',userController.createUser);
-router.post('/common-details',userController.createCommonDetails); 
-router.get('/roles-details',userController.getAllRolesDetails); 
-router.get('/roles/types',verifyToken,userController.getRoleTypes) 
-router.delete('/common-details',userController.deleteCommonDetail);
+router.post('/create-users',verifyToken, requireAdmin,userController.createUser);
+router.post('/common-details',verifyToken, requireSuperAdmin,userController.createCommonDetails); 
+router.get('/roles-details',verifyToken, requireSuperAdmin,userController.getAllRolesDetails); 
+router.get('/roles/types',verifyToken, requireSuperAdmin,userController.getRoleTypes) 
+router.delete('/common-details',verifyToken, requireSuperAdmin,userController.deleteCommonDetail);
 
 export default router;
