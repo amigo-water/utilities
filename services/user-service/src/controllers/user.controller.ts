@@ -8,6 +8,10 @@ import bcrypt from "bcryptjs";
 import { KafkaService } from '../services/kafka.service';
 import { messagingService } from '../services/messaging.service';
 import { Otp } from '../models/otp.model';
+import { CommonService } from '../services/common.service';
+import generator from 'generate-password';
+
+const commonService = new CommonService();
 
 declare global {
   namespace Express {
@@ -681,7 +685,151 @@ export class UserController {
     }
   }
 
+  
+  
+  
+    async createCommonDetails(req:Request,res:Response) {
+      try{
+        const data = await commonService.create(req.body);
+        return res.status(201).json({
+          message: 'Created successfully',
+          data
+        });
+      } catch(error){
+        console.error('Create Error:',error);
+        return res.status(500).json({
+          error: 'Internal server error'
+        })
+      }
+    }
+  
+    async getRoleTypes(req: Request,res:Response){
+      try{
+        const { type } = req.query;
+        const userRole = req.user?.role;
+  
+        if(!type ){
+          return res.status(400).json({
+            error:'`type` query param is required'
+          })
+        }
+  
+        const requestedType = String(type).toUpperCase();
+  
+        if (userRole === 'ADMIN' && requestedType !== 'STAFF') {
+        return res.status(403).json({
+          error: 'Access denied. Admins can only access STAFF roles.'
+        });
+      }
+  
+      if (userRole === 'SUPERADMIN' && !['STAFF', 'ADMIN'].includes(requestedType)) {
+        return res.status(403).json({
+          error: 'Access denied. Superadmins can only access ADMIN or STAFF roles.'
+        });
+      }
+  
+      if (!['STAFF', 'ADMIN'].includes(requestedType)) {
+        return res.status(403).json({
+          error: 'Only STAFF or ADMIN role types are allowed.'
+        });
+      }
+  
+        const values = await commonService.getAllTypes(requestedType as string);
+        return res.status(200).json(values);
+      } catch (error){
+        console.log("Get All Types Error:",error)
+        return res.status(500).json({
+          error:'Internal server error'
+        })
+      }
+    }
+  
+    async getAllRolesDetails(req:Request,res:Response) {
+      try{
+        const data = await commonService.getAll();
+        return res.status(200).json({
+          data
+        })
+      } catch(error){
+        console.log("Get All Error:",error);
+        return res.status(500).json({
+          error: 'Internal server error'
+        })
+      }
+    }
+  
+    async deleteCommonDetail(req:Request,res:Response){
+      try{
+        const { type , code } = req.query;
+  
+         if (!type || !code) {
+          return res.status(400).json({ error: 'Missing type or code query parameter' });
+        }
+  
+        const deleted = await commonService.delete(String(type),String(code));
+  
+        if (!deleted) {
+          return res.status(404).json({ error: `No item found with type '${type}' and code '${code}'` });
+        }
+        
+        return res.status(200).json({ message: 'Deleted successfully' });
+      } catch(error){
+        console.log("Delete Error:",error);
+        return res.status(500).json({
+          error: 'Internal server error'
+        })
+      }
+    }
+  
+    async createUser (req:Request,res:Response){
+      try{
+        const { phone, email, name,utility_id,role } = req.body
+  
+         // Validate required fields
+        if ((!phone && !email) || !name || !utility_id || !role) {
+          return res.status(400).json({ error: 'Missing required fields.' });
+        }
+        
+        // Validate role
+        const isValid = await User.isValidRole(role);
+        
+        if(!isValid){
+          return res.status(400).json({
+            error: `Role '${role}' is not allowed for utility '${utility_id}'`
+          })
+        }
 
+        const password = generator.generate({
+          length: 10,
+          numbers: true
+        });
+  
+        const user = await User.create({
+            user_id: uuidv4(),
+            username: name,
+            name,
+            role,
+            utility_id: utility_id,
+            password: password,
+            login_url: "",
+            status: "INACTIVE",
+            contact_info:{
+              phone:phone || '',
+              email: email || ''
+            }
+        });
+  
+        res.status(201).json({ message: 'User created successfully', user:{
+          username: user.username,
+          password: user.password,
+          role: user.role
+        } });
+  
+      } catch(error){
+        console.error('Create User Error:', error);
+        res.status(500).json({ error });
+      }
+    }
  
 }
 
