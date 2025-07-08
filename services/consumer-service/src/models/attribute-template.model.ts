@@ -2,7 +2,7 @@ import { Model, DataTypes } from 'sequelize';
 import sequelize from '../config/database';
 import Utility from './utility.model';
 
-interface AttributeTemplateAttributes {
+export interface AttributeTemplateAttributes {
   templateId: string;
   attributeName: string;
   datatype: string;

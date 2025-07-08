@@ -1,4 +1,4 @@
-import express, { Request, Response, NextFunction } from 'express';
+import express, { Request, Response } from 'express';
 import { UserController } from '../controllers/user.controller';
 import { verifyToken, requireAdmin, requireSuperAdmin } from '@shared/middleware/auth.middleware';
 const router = express.Router();
