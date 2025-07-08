@@ -27,12 +27,6 @@ declare global {
   }
 }
 
-interface OTPRequest {
-  otp: string;
-  identifier: string;
-  type: "email" | "phone" | "username";
-}
-
 interface LoginRequest {
   identifier: string;
   password: string;
@@ -82,7 +76,6 @@ export class UserController {
   }
 
   private generateOTP(): string {
-    console.log("Generating OTP");
     return Math.floor(100000 + Math.random() * 900000).toString();
   }
 
@@ -91,7 +84,6 @@ export class UserController {
     otp: string,
     userId?: string
   ): Promise<void> {
-    console.log(`Storing OTP for identifier: ${identifier} in database`);
     try {
       const expiresAt = new Date(
         Date.now() + this.OTP_EXPIRES_IN_MINUTES * 60 * 1000
@@ -109,17 +101,12 @@ export class UserController {
         user_id: userId, // Optional: link to user if available
         is_used: false,
       });
-      console.log(
-        `OTP stored successfully in database for identifier: ${identifier}`
-      );
     } catch (error) {
       console.error(`Error storing OTP in database for ${identifier}:`, error);
-      // Depending on policy, you might want to re-throw to signal failure to the caller
     }
   }
 
   private async sendOTPEmail(email: string, otp: string): Promise<void> {
-    console.log("Sending OTP email to:", email);
     await this.transporter.sendMail({
       from: process.env.SMTP_USER,
       to: email,
@@ -137,7 +124,6 @@ export class UserController {
     identifier: string,
     otpToValidate: string
   ): Promise<boolean> {
-    console.log(`Validating OTP for ${identifier} from database.`);
     try {
       const otpRecord = await Otp.findOne({
         where: {
@@ -148,15 +134,11 @@ export class UserController {
       });
 
       if (!otpRecord) {
-        console.log(
-          `validateOTP: No active OTP found in DB for identifier: ${identifier}`
-        );
         return false;
       }
 
       // Check for expiration
       if (new Date() > new Date(otpRecord.expires_at)) {
-        console.log(`validateOTP: OTP expired for identifier: ${identifier}`);
         await otpRecord.update({ is_used: true }); // Mark as used
         return false;
       }
@@ -165,20 +147,14 @@ export class UserController {
       const isMatch = otpRecord.otp_code === otpToValidate; // For plaintext OTPs
 
       if (isMatch) {
-        console.log(`validateOTP: OTP matched for ${identifier}.`);
         // IMPORTANT: Marking as used should typically happen after the primary action (e.g., login) is successful.
         // For a generic validateOTP, this might be okay, or defer to the calling function.
         // await otpRecord.update({ is_used: true });
         return true;
       }
 
-      console.log(`validateOTP: Incorrect OTP for identifier: ${identifier}`);
       return false;
     } catch (error) {
-      console.error(
-        `Error during validateOTP from DB for ${identifier}:`,
-        error
-      );
       return false;
     }
   }
@@ -193,7 +169,7 @@ export class UserController {
       if (!identifier || !password) {
         return res
           .status(400)
-          .json({ message: "Identifier, and password are required" });
+          .json({ success: false, message: "Identifier and password are required" });
       }
 
       function getIdentifierType(identifier: string): IdentifierType | null {
@@ -206,16 +182,15 @@ export class UserController {
 
       // Validate email format if type is email
       if (type === "email" && !isEmail(identifier)) {
-        return res.status(400).json({ message: "Invalid email format" });
+        return res.status(400).json({ success: false, message: "Invalid email format" });
       } else if (type === "phone" && !isPhone(identifier)) {
         // Validate phone number format if type is phone
-        return res.status(400).json({ message: "Invalid phone number format" });
+        return res.status(400).json({ success: false, message: "Invalid phone number format" });
       } else if (type === null) {
         // Default error case for invalid or undefined type
-        return res.status(400).json({ message: "Invalid identifier type" });
+        return res.status(400).json({ success: false, message: "Invalid identifier type" });
       }
 
-      console.log("requestOTP", identifier, type, password);
 
       let user: IUser | null;
 
@@ -233,19 +208,18 @@ export class UserController {
         })) as IUser | null;
       }
 
-      console.log("req-erro:", user);
 
       if (!user) {
         return res
           .status(401)
-          .json({ message: "User not found or invalid credentials" });
+          .json({ success: false, message: "User not found or invalid credentials" });
       }
 
       const isPasswordValid = await bcrypt.compare(password, user.password);
       if (!isPasswordValid) {
         return res
           .status(401)
-          .json({ message: "User not found or invalid credentials" });
+          .json({ success: false, message: "User not found or invalid credentials" });
       }
 
       const otpGenerated = this.generateOTP();
@@ -253,7 +227,6 @@ export class UserController {
       // Store OTP with identifier (and optionally userId if available)
       await this.storeOTP(identifier, otpGenerated, user?.user_id);
 
-      console.log(otpGenerated);
       // Send OTP based on type
       switch (type) {
         case "email":
@@ -263,41 +236,19 @@ export class UserController {
           await this.sendOTPPhone(identifier, otpGenerated);
           break;
         default:
-          return res.status(400).json({ message: "Invalid type" });
+          return res.status(400).json({ success: false, message: "Invalid type" });
       }
 
-      res.status(200).json({ message: "OTP sent successfully" });
+      res.status(200).json({ success: true, message: "OTP sent successfully" });
     } catch (error) {
       res.status(500).json({
+        success: false,
         message: "Error sending OTP",
         error: error instanceof Error ? error.message : "Unknown error",
       });
     }
   }
 
-  async verifyOTP(req: Request, res: Response) {
-    try {
-      const { identifier, otp } = req.body as {
-        identifier: string;
-        otp: string;
-      };
-
-      if (!identifier || !otp) {
-        return res
-          .status(400)
-          .json({ message: "Identifier and OTP are required" });
-      }
-
-      const isValid = await this.validateOTP(identifier, otp);
-      if (!isValid) {
-        return res.status(400).json({ message: "Invalid or expired OTP" });
-      }
-
-      res.json({ message: "OTP verified successfully" });
-    } catch (error) {
-      res.status(500).json({ message: "Error verifying OTP", error });
-    }
-  }
 
   async register(req: Request, res: Response) {
     try {
@@ -389,9 +340,8 @@ export class UserController {
         token,
       });
     } catch (error) {
-      console.error("Registration error:", error); // Add this line to see the actual error
       res.status(500).json({
-        message: "Error registering user",
+        success: false,
         error:
           error instanceof Error ? error.message : "Unknown error occurred",
       });
@@ -405,7 +355,7 @@ export class UserController {
       if (!identifier || !password || !otp) {
         return res
           .status(400)
-          .json({ message: "Identifier, password, and OTP are required" });
+          .json({ success: false, message: "Identifier, password and OTP are required" });
       }
 
       let user: IUser | null = null;
@@ -442,21 +392,20 @@ export class UserController {
           return res
             .status(400)
             .json({
+              success: false,
               message:
                 "Invalid identifier: must be a valid email or phone number",
             });
       }
 
       if (!user) {
-        console.log("User not found");
-        return res.status(401).json({ message: "Invalid credentials11" });
+        return res.status(401).json({ success: false, message: "Invalid credentials" });
       }
 
       // Verify password
       const isPasswordValid = await bcrypt.compare(password, user.password);
       if (!isPasswordValid) {
-        console.log("Invalid password");
-        return res.status(401).json({ message: "Invalid credentials" });
+        return res.status(401).json({ success: false, message: "Invalid credentials" });
       }
 
       // Verify OTP
@@ -494,6 +443,7 @@ export class UserController {
       });
 
       res.json({
+        success: true,
         message: "Login successful",
         user: {
           user_id: user.user_id,
@@ -509,6 +459,7 @@ export class UserController {
       });
     } catch (error) {
       res.status(500).json({
+        success: false,
         message: "Error during login",
         error: error instanceof Error ? error.message : String(error),
       });
@@ -524,11 +475,10 @@ export class UserController {
     if (!identifier || !otp) {
       res
         .status(400)
-        .json({ message: "Identifier and OTP are required for verification." });
+        .json({ success: false, message: "Identifier and OTP are required for verification." });
       return false;
     }
 
-    console.log(`Verifying login OTP for ${identifier} from database.`);
     try {
       const otpRecord = await Otp.findOne({
         where: {
@@ -539,20 +489,14 @@ export class UserController {
       });
 
       if (!otpRecord) {
-        console.log(
-          `verifyLoginOTP: No active OTP found in DB for identifier: ${identifier}`
-        );
-        res.status(401).json({ message: "Invalid or expired OTP." });
+        res.status(401).json({ success: false, message: "Invalid or expired OTP." });
         return false;
       }
 
       // Check for expiration
       if (new Date() > new Date(otpRecord.expires_at)) {
-        console.log(
-          `verifyLoginOTP: OTP expired for identifier: ${identifier}`
-        );
         await otpRecord.update({ is_used: true }); // Mark as used
-        res.status(401).json({ message: "Invalid or expired OTP." });
+        res.status(401).json({ success: false, message: "Invalid or expired OTP." });
         return false;
       }
 
@@ -560,28 +504,16 @@ export class UserController {
       const isOtpMatch = otpRecord.otp_code === otp; // For plaintext OTPs
 
       if (!isOtpMatch) {
-        console.log(
-          `verifyLoginOTP: Incorrect OTP for identifier: ${identifier}`
-        );
-        // Note: Do NOT mark OTP as used for incorrect attempts. Allow user to retry with the same OTP if it's still valid.
-        // Implement attempt limiting separately if needed.
-        res.status(401).json({ message: "Invalid or expired OTP." });
+        res.status(401).json({ success: false, message: "Invalid or expired OTP." });
         return false;
       }
 
       // OTP is valid and matches
-      console.log(
-        `verifyLoginOTP: OTP verified successfully for identifier: ${identifier}`
-      );
       // Mark OTP as used to prevent reuse AFTER successful verification in the login flow
       await otpRecord.update({ is_used: true });
       return true; // OTP is valid, DO NOT send a response here.
     } catch (error) {
-      console.error(
-        `Error during OTP verification with DB for ${identifier}:`,
-        error
-      );
-      res.status(500).json({ message: "Error during OTP verification" });
+      res.status(500).json({ success: false, message: "Error during OTP verification" });
       return false;
     }
   }
@@ -600,8 +532,7 @@ export class UserController {
 
       res.json({ message: "Logged out successfully" });
     } catch (error) {
-      console.error("Logout error:", error);
-      res.status(500).json({ message: "Error during logout", error });
+      res.status(500).json({ success: false, message: "Error during logout", error });
     }
   }
 
@@ -781,7 +712,6 @@ export class UserController {
         data,
       });
     } catch (error: any) {
-      console.log(error);
       return res.status(500).json({
         success: false,
         error:
@@ -971,7 +901,6 @@ export class UserController {
         },
       });
     } catch (error) {
-      console.log(error);
       res.status(500).json({
         success: false,
         error: "Internal server error. Please try again later",

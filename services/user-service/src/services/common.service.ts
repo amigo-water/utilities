@@ -3,11 +3,11 @@ import { Op, Sequelize } from "sequelize";
 import { IHierarchyItem } from "../models/common.model";
 
 export class CommonService {
-    async create(data: Partial<IHierarchyItem>) {
-        try {
-          if (!data.code || !data.type || !data.name) {
-            throw new Error("Missing required fields: 'type', 'code', or 'name'");
-          }
+  async create(data: Partial<IHierarchyItem>) {
+    try {
+      if (!data.code || !data.type || !data.name) {
+        throw new Error("Missing required fields: 'type', 'code', or 'name'");
+      }
     
           // Check if code already exists for the type
           const exists = await HierarchyItem.findOne({

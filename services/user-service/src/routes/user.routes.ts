@@ -8,7 +8,6 @@ const userController = new UserController();
 router.post('/register', (req: Request, res: Response) => userController.register(req, res));
 router.post('/login', (req: Request, res: Response) => userController.login(req, res));
 router.post('/request-otp', (req: Request, res: Response) => userController.requestOTP(req, res));
-router.post('/verify-otp', (req: Request, res: Response) => userController.verifyOTP(req, res));
 
 // Protected routes (require authentication)
 router.get('/profile', verifyToken, (req: Request, res: Response, ) => userController.getProfile(req, res));
