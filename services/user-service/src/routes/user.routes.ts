@@ -1,4 +1,4 @@
-import express, { Request, Response, NextFunction } from 'express';
+import express, { Request, Response } from 'express';
 import { UserController } from '../controllers/user.controller';
 import { verifyToken, requireAdmin, requireSuperAdmin } from '@shared/middleware/auth.middleware';
 const router = express.Router();
@@ -22,5 +22,6 @@ router.post('/common-details',verifyToken, requireSuperAdmin,userController.crea
 router.get('/roles-details',verifyToken, requireSuperAdmin,userController.getAllRolesDetails); 
 router.get('/roles/types',verifyToken, requireSuperAdmin,userController.getRoleTypes) 
 router.delete('/common-details',verifyToken, requireSuperAdmin,userController.deleteCommonDetail);
+router.get('/common/names-by-type', verifyToken, requireSuperAdmin, userController.getNamesByType);
 
 export default router;

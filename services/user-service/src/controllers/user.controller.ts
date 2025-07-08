@@ -2,14 +2,15 @@ import { Request, Response } from "express";
 import { User, IUser, LoginHistory } from "../models/user.model";
 import { v4 as uuidv4 } from "uuid";
 import nodemailer from "nodemailer";
-import { AuthService} from '@shared/auth-service';
-import {role} from '@shared/middleware/auth.middleware';
+import { AuthService } from "@shared/auth-service";
+import { role } from "@shared/middleware/auth.middleware";
 import bcrypt from "bcryptjs";
-import { KafkaService } from '../services/kafka.service';
-import { messagingService } from '../services/messaging.service';
-import { Otp } from '../models/otp.model';
-import { CommonService } from '../services/common.service';
-import generator from 'generate-password';
+import { KafkaService } from "../services/kafka.service";
+import { messagingService } from "../services/messaging.service";
+import { Otp } from "../models/otp.model";
+import { CommonService } from "../services/common.service";
+import generator from "generate-password";
+import { HierarchyItem } from "../models/common.model";
 
 const commonService = new CommonService();
 
@@ -38,8 +39,7 @@ interface LoginRequest {
   otp: string;
 }
 
-type IdentifierType = 'email' | 'phone' ;
-
+type IdentifierType = "email" | "phone";
 
 export function isEmail(value: string): boolean {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -50,7 +50,6 @@ export function isPhone(value: string): boolean {
   const phoneRegex = /^[0-9]{10}$/;
   return phoneRegex.test(value);
 }
-
 
 export class UserController {
   public readonly JWT_SECRET: string = process.env.JWT_SECRET || "";
@@ -66,7 +65,7 @@ export class UserController {
       pass: process.env.SMTP_PASSWORD,
     },
   });
- 
+
   private authService: AuthService;
   private kafkaService: KafkaService;
 
@@ -86,12 +85,21 @@ export class UserController {
     return Math.floor(100000 + Math.random() * 900000).toString();
   }
 
-  private async storeOTP(identifier: string, otp: string, userId?: string): Promise<void> {
+  private async storeOTP(
+    identifier: string,
+    otp: string,
+    userId?: string
+  ): Promise<void> {
     console.log(`Storing OTP for identifier: ${identifier} in database`);
     try {
-      const expiresAt = new Date(Date.now() + this.OTP_EXPIRES_IN_MINUTES * 60 * 1000);
+      const expiresAt = new Date(
+        Date.now() + this.OTP_EXPIRES_IN_MINUTES * 60 * 1000
+      );
       // Consider invalidating previous active OTPs for the same identifier
-      await Otp.update({ is_used: true }, { where: { identifier, is_used: false } });
+      await Otp.update(
+        { is_used: true },
+        { where: { identifier, is_used: false } }
+      );
 
       await Otp.create({
         identifier,
@@ -100,7 +108,9 @@ export class UserController {
         user_id: userId, // Optional: link to user if available
         is_used: false,
       });
-      console.log(`OTP stored successfully in database for identifier: ${identifier}`);
+      console.log(
+        `OTP stored successfully in database for identifier: ${identifier}`
+      );
     } catch (error) {
       console.error(`Error storing OTP in database for ${identifier}:`, error);
       // Depending on policy, you might want to re-throw to signal failure to the caller
@@ -118,11 +128,14 @@ export class UserController {
   }
 
   private async sendOTPPhone(phone: string, otp: string): Promise<void> {
-    await messagingService.sendOTP(phone, otp, 'whatsapp');
-    await messagingService.sendOTP(phone, otp, 'sms');
+    await messagingService.sendOTP(phone, otp, "whatsapp");
+    await messagingService.sendOTP(phone, otp, "sms");
   }
 
-  private async validateOTP(identifier: string, otpToValidate: string): Promise<boolean> {
+  private async validateOTP(
+    identifier: string,
+    otpToValidate: string
+  ): Promise<boolean> {
     console.log(`Validating OTP for ${identifier} from database.`);
     try {
       const otpRecord = await Otp.findOne({
@@ -130,11 +143,13 @@ export class UserController {
           identifier,
           is_used: false, // Only find OTPs that haven't been used
         },
-        order: [['createdAt', 'DESC']], // Get the most recent active OTP
+        order: [["createdAt", "DESC"]], // Get the most recent active OTP
       });
 
       if (!otpRecord) {
-        console.log(`validateOTP: No active OTP found in DB for identifier: ${identifier}`);
+        console.log(
+          `validateOTP: No active OTP found in DB for identifier: ${identifier}`
+        );
         return false;
       }
 
@@ -152,14 +167,17 @@ export class UserController {
         console.log(`validateOTP: OTP matched for ${identifier}.`);
         // IMPORTANT: Marking as used should typically happen after the primary action (e.g., login) is successful.
         // For a generic validateOTP, this might be okay, or defer to the calling function.
-        // await otpRecord.update({ is_used: true }); 
+        // await otpRecord.update({ is_used: true });
         return true;
       }
-      
+
       console.log(`validateOTP: Incorrect OTP for identifier: ${identifier}`);
       return false;
     } catch (error) {
-      console.error(`Error during validateOTP from DB for ${identifier}:`, error);
+      console.error(
+        `Error during validateOTP from DB for ${identifier}:`,
+        error
+      );
       return false;
     }
   }
@@ -170,7 +188,7 @@ export class UserController {
         identifier: string;
         password: string;
       };
-      
+
       if (!identifier || !password) {
         return res
           .status(400)
@@ -178,8 +196,8 @@ export class UserController {
       }
 
       function getIdentifierType(identifier: string): IdentifierType | null {
-        if (isEmail(identifier)) return 'email';
-        if (isPhone(identifier)) return 'phone';
+        if (isEmail(identifier)) return "email";
+        if (isPhone(identifier)) return "phone";
         return null;
       }
 
@@ -196,43 +214,45 @@ export class UserController {
         return res.status(400).json({ message: "Invalid identifier type" });
       }
 
-      console.log("requestOTP",identifier,type,password)
-
+      console.log("requestOTP", identifier, type, password);
 
       let user: IUser | null;
 
-      if(type === "email"){
-         user = await User.findOne({
-        where: {
-          "contact_info.email": identifier,
-        },
-      });
-      } else{
+      if (type === "email") {
         user = await User.findOne({
-        where: {
-          "contact_info.phone": identifier,
-        },
-      })  as IUser | null;  
+          where: {
+            "contact_info.email": identifier,
+          },
+        });
+      } else {
+        user = (await User.findOne({
+          where: {
+            "contact_info.phone": identifier,
+          },
+        })) as IUser | null;
       }
-      
-    console.log("req-erro:",user)
+
+      console.log("req-erro:", user);
 
       if (!user) {
-        return res.status(401).json({ message: "User not found or invalid credentials" });
+        return res
+          .status(401)
+          .json({ message: "User not found or invalid credentials" });
       }
 
       const isPasswordValid = await bcrypt.compare(password, user.password);
       if (!isPasswordValid) {
-        return res.status(401).json({ message: "User not found or invalid credentials" });
+        return res
+          .status(401)
+          .json({ message: "User not found or invalid credentials" });
       }
-
 
       const otpGenerated = this.generateOTP();
 
       // Store OTP with identifier (and optionally userId if available)
       await this.storeOTP(identifier, otpGenerated, user?.user_id);
 
-      console.log(otpGenerated)
+      console.log(otpGenerated);
       // Send OTP based on type
       switch (type) {
         case "email":
@@ -247,9 +267,9 @@ export class UserController {
 
       res.status(200).json({ message: "OTP sent successfully" });
     } catch (error) {
-      res.status(500).json({ 
-        message: "Error sending OTP", 
-        error: error instanceof Error ? error.message : "Unknown error" 
+      res.status(500).json({
+        message: "Error sending OTP",
+        error: error instanceof Error ? error.message : "Unknown error",
       });
     }
   }
@@ -285,19 +305,25 @@ export class UserController {
 
       // Validate contact info
       if (!contact_info?.email && !contact_info?.phone) {
-        return res
-          .status(400)
-          .json({
-            message: "Both email and phone are required.",
-          });
+        return res.status(400).json({
+          message: "Both email and phone are required.",
+        });
       }
 
+      // Validate phone number format if type is phone
+      if (
+        role === "email" &&
+        !isEmail(contact_info?.email) &&
+        !isPhone(contact_info?.phone)
+      ) {
+        return res
+          .status(400)
+          .json({ message: "Invalid phone number format1" });
+      } else if (role === "phone" && !isPhone(contact_info?.phone)) {
         // Validate phone number format if type is phone
-      if (role === "email" && !isEmail(contact_info?.email) && !isPhone(contact_info?.phone)) {
-        return res.status(400).json({ message: "Invalid phone number format1" });
-      } else if  (role === "phone" && !isPhone(contact_info?.phone)) {
-        // Validate phone number format if type is phone
-        return res.status(400).json({ message: "Invalid phone number format2" });
+        return res
+          .status(400)
+          .json({ message: "Invalid phone number format2" });
       }
 
       // Check if username already exists
@@ -334,19 +360,17 @@ export class UserController {
       //   role_name: role,
       // });
 
-
-
       const token = AuthService.generateAuthToken({
         role: user.role as role,
         id: user.user_id,
       });
       // req.token = token;
-      await this.kafkaService.publish('user.created', {
+      await this.kafkaService.publish("user.created", {
         userId: user.user_id,
         email: user.contact_info.email,
         name: user.name,
         createdAt: new Date().toISOString(),
-        eventType: 'user.created',
+        eventType: "user.created",
       });
 
       res.status(201).json({
@@ -377,24 +401,26 @@ export class UserController {
     try {
       const { identifier, password, otp } = req.body as LoginRequest;
 
-      if (!identifier || !password  || !otp) {
-        return res.status(400).json({ message: "Identifier, password, and OTP are required" });
+      if (!identifier || !password || !otp) {
+        return res
+          .status(400)
+          .json({ message: "Identifier, password, and OTP are required" });
       }
 
       let user: IUser | null = null;
 
-
       let type: IdentifierType;
-      
+
       if (isEmail(identifier)) {
-          type = "email";
+        type = "email";
       } else if (isPhone(identifier)) {
-          type = "phone";
+        type = "phone";
       } else {
-        throw new Error("Invalid identifier: must be a valid email or phone number");
+        throw new Error(
+          "Invalid identifier: must be a valid email or phone number"
+        );
       }
 
-    
       // Find user based on identifier type
       switch (type) {
         case "email":
@@ -412,7 +438,12 @@ export class UserController {
           });
           break;
         default:
-          return res.status(400).json({ message: "Invalid identifier: must be a valid email or phone number" });
+          return res
+            .status(400)
+            .json({
+              message:
+                "Invalid identifier: must be a valid email or phone number",
+            });
       }
 
       if (!user) {
@@ -450,19 +481,16 @@ export class UserController {
         success: true,
       });
 
-
       // // Generate JWT token
       // const token = jwt.sign(
       //   { user_id: user.user_id },
       //   process.env.JWT_SECRET as string,
       //   { expiresIn: "24h" }
       // );
-      const token =  AuthService.generateToken({ id: user.user_id ,
+      const token = AuthService.generateToken({
+        id: user.user_id,
         role: user.role as role,
       });
-
-
-
 
       res.json({
         message: "Login successful",
@@ -479,21 +507,26 @@ export class UserController {
         token,
       });
     } catch (error) {
-      res.status(500).json({ 
-        message: "Error during login",  
-        error: error instanceof Error ? error.message : String(error), 
+      res.status(500).json({
+        message: "Error during login",
+        error: error instanceof Error ? error.message : String(error),
       });
     }
   }
 
   async verifyLoginOTP(req: Request, res: Response): Promise<boolean> {
-    const { identifier, otp } = req.body as { identifier: string; otp: string; /* other fields */ };
-  
+    const { identifier, otp } = req.body as {
+      identifier: string;
+      otp: string /* other fields */;
+    };
+
     if (!identifier || !otp) {
-      res.status(400).json({ message: "Identifier and OTP are required for verification." });
-      return false; 
+      res
+        .status(400)
+        .json({ message: "Identifier and OTP are required for verification." });
+      return false;
     }
-  
+
     console.log(`Verifying login OTP for ${identifier} from database.`);
     try {
       const otpRecord = await Otp.findOne({
@@ -501,41 +534,52 @@ export class UserController {
           identifier,
           is_used: false, // Only find OTPs that haven't been used
         },
-        order: [['createdAt', 'DESC']], // Get the most recent active OTP
+        order: [["createdAt", "DESC"]], // Get the most recent active OTP
       });
-  
+
       if (!otpRecord) {
-        console.log(`verifyLoginOTP: No active OTP found in DB for identifier: ${identifier}`);
+        console.log(
+          `verifyLoginOTP: No active OTP found in DB for identifier: ${identifier}`
+        );
         res.status(401).json({ message: "Invalid or expired OTP." });
-        return false; 
+        return false;
       }
 
       // Check for expiration
       if (new Date() > new Date(otpRecord.expires_at)) {
-        console.log(`verifyLoginOTP: OTP expired for identifier: ${identifier}`);
+        console.log(
+          `verifyLoginOTP: OTP expired for identifier: ${identifier}`
+        );
         await otpRecord.update({ is_used: true }); // Mark as used
         res.status(401).json({ message: "Invalid or expired OTP." });
         return false;
       }
-    
+
       // SECURITY: If OTPs are hashed in DB, use: const isOtpMatch = await bcrypt.compare(otp, otpRecord.otp_code);
       const isOtpMatch = otpRecord.otp_code === otp; // For plaintext OTPs
 
-      if (!isOtpMatch) { 
-        console.log(`verifyLoginOTP: Incorrect OTP for identifier: ${identifier}`);
+      if (!isOtpMatch) {
+        console.log(
+          `verifyLoginOTP: Incorrect OTP for identifier: ${identifier}`
+        );
         // Note: Do NOT mark OTP as used for incorrect attempts. Allow user to retry with the same OTP if it's still valid.
         // Implement attempt limiting separately if needed.
-        res.status(401).json({ message: "Invalid or expired OTP." }); 
-        return false; 
+        res.status(401).json({ message: "Invalid or expired OTP." });
+        return false;
       }
-    
+
       // OTP is valid and matches
-      console.log(`verifyLoginOTP: OTP verified successfully for identifier: ${identifier}`);
+      console.log(
+        `verifyLoginOTP: OTP verified successfully for identifier: ${identifier}`
+      );
       // Mark OTP as used to prevent reuse AFTER successful verification in the login flow
-      await otpRecord.update({ is_used: true }); 
+      await otpRecord.update({ is_used: true });
       return true; // OTP is valid, DO NOT send a response here.
     } catch (error) {
-      console.error(`Error during OTP verification with DB for ${identifier}:`, error);
+      console.error(
+        `Error during OTP verification with DB for ${identifier}:`,
+        error
+      );
       res.status(500).json({ message: "Error during OTP verification" });
       return false;
     }
@@ -551,7 +595,7 @@ export class UserController {
       delete req.headers.authorization;
 
       // Optionally, you could also clear the token from the client's cookie if you're using cookies
-      res.clearCookie('token');
+      res.clearCookie("token");
 
       res.json({ message: "Logged out successfully" });
     } catch (error) {
@@ -615,13 +659,13 @@ export class UserController {
         return res.status(404).json({ message: "User not found" });
       }
 
-      await this.kafkaService.publish('user.updated', {
+      await this.kafkaService.publish("user.updated", {
         userId: updatedUser.user_id,
         name: updatedUser.name,
         contact_info: updatedUser.contact_info,
         status: updatedUser.status,
         updatedAt: updatedUser.updated_at,
-        eventType: 'user.updated',
+        eventType: "user.updated",
       });
 
       res.json({
@@ -674,9 +718,9 @@ export class UserController {
         { where: { user_id: userId } }
       );
 
-      await this.kafkaService.publish('user.password.updated', {
+      await this.kafkaService.publish("user.password.updated", {
         userId,
-        eventType: 'user.password.updated',
+        eventType: "user.password.updated",
       });
 
       res.json({ message: "Password updated successfully" });
@@ -685,151 +729,245 @@ export class UserController {
     }
   }
 
-  
-  
-  
-    async createCommonDetails(req:Request,res:Response) {
-      try{
-        const data = await commonService.create(req.body);
-        return res.status(201).json({
-          message: 'Created successfully',
-          data
-        });
-      } catch(error){
-        console.error('Create Error:',error);
-        return res.status(500).json({
-          error: 'Internal server error'
-        })
-      }
-    }
-  
-    async getRoleTypes(req: Request,res:Response){
-      try{
-        const { type } = req.query;
-        const userRole = req.user?.role;
-  
-        if(!type ){
-          return res.status(400).json({
-            error:'`type` query param is required'
-          })
-        }
-  
-        const requestedType = String(type).toUpperCase();
-  
-        if (userRole === 'ADMIN' && requestedType !== 'STAFF') {
-        return res.status(403).json({
-          error: 'Access denied. Admins can only access STAFF roles.'
-        });
-      }
-  
-      if (userRole === 'SUPERADMIN' && !['STAFF', 'ADMIN'].includes(requestedType)) {
-        return res.status(403).json({
-          error: 'Access denied. Superadmins can only access ADMIN or STAFF roles.'
-        });
-      }
-  
-      if (!['STAFF', 'ADMIN'].includes(requestedType)) {
-        return res.status(403).json({
-          error: 'Only STAFF or ADMIN role types are allowed.'
-        });
-      }
-  
-        const values = await commonService.getAllTypes(requestedType as string);
-        return res.status(200).json(values);
-      } catch (error){
-        console.log("Get All Types Error:",error)
-        return res.status(500).json({
-          error:'Internal server error'
-        })
-      }
-    }
-  
-    async getAllRolesDetails(req:Request,res:Response) {
-      try{
-        const data = await commonService.getAll();
-        return res.status(200).json({
-          data
-        })
-      } catch(error){
-        console.log("Get All Error:",error);
-        return res.status(500).json({
-          error: 'Internal server error'
-        })
-      }
-    }
-  
-    async deleteCommonDetail(req:Request,res:Response){
-      try{
-        const { type , code } = req.query;
-  
-         if (!type || !code) {
-          return res.status(400).json({ error: 'Missing type or code query parameter' });
-        }
-  
-        const deleted = await commonService.delete(String(type),String(code));
-  
-        if (!deleted) {
-          return res.status(404).json({ error: `No item found with type '${type}' and code '${code}'` });
-        }
-        
-        return res.status(200).json({ message: 'Deleted successfully' });
-      } catch(error){
-        console.log("Delete Error:",error);
-        return res.status(500).json({
-          error: 'Internal server error'
-        })
-      }
-    }
-  
-    async createUser (req:Request,res:Response){
-      try{
-        const { phone, email, name,utility_id,role } = req.body
-  
-         // Validate required fields
-        if ((!phone && !email) || !name || !utility_id || !role) {
-          return res.status(400).json({ error: 'Missing required fields.' });
-        }
-        
-        // Validate role
-        const isValid = await User.isValidRole(role);
-        
-        if(!isValid){
-          return res.status(400).json({
-            error: `Role '${role}' is not allowed for utility '${utility_id}'`
-          })
-        }
+  async createCommonDetails(req: Request, res: Response) {
+    try {
+      const { type, code, name, description, is_active } = req.body;
 
-        const password = generator.generate({
-          length: 10,
-          numbers: true
+      if (!type || !code || !name || !description || !is_active) {
+        return res.status(400).json({
+          success: false,
+          error: "`type`, `code`, and `name` are required fields.",
         });
-  
-        const user = await User.create({
-            user_id: uuidv4(),
-            username: name,
-            name,
-            role,
-            utility_id: utility_id,
-            password: password,
-            login_url: "",
-            status: "INACTIVE",
-            contact_info:{
-              phone:phone || '',
-              email: email || ''
-            }
+      }
+
+      if (
+        typeof type !== "string" ||
+        typeof code !== "string" ||
+        typeof name !== "string"
+      ) {
+        return res.status(400).json({
+          success: false,
+          error:
+            "Invalid data format. `type`, `code`, and `name` must be strings.",
         });
-  
-        res.status(201).json({ message: 'User created successfully', user:{
+      }
+
+      const upperCode = code.toUpperCase();
+      let metadata = {};
+
+      if (type.toUpperCase() === "ROLE") {
+        if (upperCode === "STAFF") {
+          metadata = { visibleTo: ["ADMIN", "SUPERADMIN"] };
+        } else if (upperCode === "ADMIN") {
+          metadata = { visibleTo: ["SUPERADMIN"] };
+        } else if (upperCode === "SUPERADMIN") {
+          metadata = { visibleTo: [] };
+        }
+      }
+
+      const data = await commonService.create({
+        type: type.toUpperCase(),
+        code: upperCode,
+        name,
+        description,
+        is_active: is_active !== false,
+        metadata,
+      });
+
+      return res.status(201).json({
+        success: true,
+        message: `Common detail created successfully under type '${type}' with code '${code}'.`,
+        data,
+      });
+    } catch (error: any) {
+      console.log(error);
+      return res.status(500).json({
+        success: false,
+        error:
+          error.message || "Internal server error. Please try again later.",
+      });
+    }
+  }
+
+  async getRoleTypes(req: Request, res: Response) {
+    try {
+      const userRole = req.user?.role as string;
+      const typeDataRaw = req.query.typeData;
+
+      if (!typeDataRaw || typeof typeDataRaw !== "string") {
+        return res.status(400).json({
+          success: false,
+          error: "`typeData` query parameter is required and must be a string",
+        });
+      }
+
+      const roles = await HierarchyItem.findAll({
+        where: { type: typeDataRaw.toUpperCase(), is_active: true },
+        attributes: ["code", "metadata"],
+      });
+
+      const allowedRoles = roles
+        .filter((role) => {
+          const visibleTo = role.metadata?.visibleTo || [];
+          return visibleTo.includes(userRole);
+        })
+        .map((role) => role.code);
+
+      return res.status(200).json({
+        success: true,
+        message: `Fetched allowed role codes for ${userRole}`,
+        data: allowedRoles,
+      });
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        error: "Internal server error",
+      });
+    }
+  }
+
+  async getAllRolesDetails(req: Request, res: Response) {
+    try {
+      const data = await commonService.getAll();
+      return res.status(200).json({
+        success: true,
+        message: "Fetched all role details successflly.",
+        data: data,
+      });
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        error: "Internal server error",
+      });
+    }
+  }
+
+  async deleteCommonDetail(req: Request, res: Response) {
+    try {
+      const { type, code } = req.query;
+
+      if (!type || !code) {
+        return res.status(400).json({
+          success: false,
+          error: "Missing type or code query parameters: `type` and `code`",
+        });
+      }
+
+      const deleted = await commonService.delete(String(type), String(code));
+
+      if (!deleted) {
+        return res.status(404).json({
+          success: false,
+          error: `No item found with type '${type}' and code '${code}'`,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: `Item with type '${type}' and code '${code}' deleted successfully`,
+      });
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        error: "Internal server error",
+      });
+    }
+  }
+
+  async createUser(req: Request, res: Response) {
+    try {
+      const { phone, email, name, utility_id, role } = req.body;
+
+      // Validate required fields
+      if ((!phone && !email) || !name || !utility_id || !role) {
+        return res.status(400).json({
+          success: false,
+          error:
+            "Missing required fields: name, utility_id, role, and either phone or email are required.",
+        });
+      }
+
+      // Validate role
+      const isValid = await User.isValidRole(role);
+      if (!isValid) {
+        return res.status(400).json({
+          success: false,
+          error: `Role '${role}' is not allowed for utility '${utility_id}'`,
+        });
+      }
+
+      const password = generator.generate({
+        length: 10,
+        numbers: true,
+      });
+
+      const user = await User.create({
+        user_id: uuidv4(),
+        username: name,
+        name,
+        role,
+        utility_id: utility_id,
+        password: password,
+        login_url: "",
+        status: "INACTIVE",
+        contact_info: {
+          phone: phone || "",
+          email: email || "",
+        },
+      });
+
+      res.status(201).json({
+        success: true,
+        message: "User created successfully.",
+        user: {
           username: user.username,
           password: user.password,
-          role: user.role
-        } });
-  
-      } catch(error){
-        console.error('Create User Error:', error);
-        res.status(500).json({ error });
-      }
+          role: user.role,
+        },
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: "Internal server error. Please try again later",
+      });
     }
- 
-}
+  }
 
+  async getNamesByType(req: Request, res: Response) {
+    try {
+      const { field } = req.query;
+
+      if (!field || typeof field !== "string") {
+        return res.status(400).json({
+          success: false,
+          message: 'Query parameter "type" is required and must be a string.',
+          data: [],
+          error: 'Invalid or missing "type" parameter',
+        });
+      }
+
+      const names = await commonService.getNamesByType(field);
+
+      if (!names.length) {
+        return res.status(404).json({
+          success: false,
+          message: `No records found for type '${field}'.`,
+          data: [],
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: `Successfully fetched names for type '${field}'.`,
+        data: names,
+        error: {},
+      });
+    } catch (error: any) {
+      return res.status(500).json({
+        success: false,
+        message: error.message || "Internal server error while fetching names.",
+        data: [],
+      });
+    }
+  }
+}
