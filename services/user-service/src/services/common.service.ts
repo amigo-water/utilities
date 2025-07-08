@@ -3,53 +3,49 @@ import { Op, Sequelize } from "sequelize";
 import { IHierarchyItem } from "../models/common.model";
 
 export class CommonService {
-  async create(data: Partial<IHierarchyItem>) {
-    try {
-      if (!data.code || !data.type || !data.name) {
-        throw new Error("Missing required fields: 'type', 'code', or 'name'");
-      }
-
-      const upperCode = data.code.toUpperCase();
-      const upperType = data.type.toUpperCase();
-
-      // Check if code already exists for the type
-      const exists = await HierarchyItem.findOne({
-        where: { type: upperType, code: upperCode },
-      });
-      if (exists)
-        throw new Error(
-          `Code '${data.code}' already exists for type '${data.type}'`
-        );
-
-      let metadata = {};
-      if (upperType.includes("ROLE")) {
-        if (upperCode === "STAFF") {
-          metadata = { visibleTo: ["ADMIN", "SUPERADMIN"] };
-        } else if (upperCode === "ADMIN") {
-          metadata = { visibleTo: ["SUPERADMIN"] };
-        } else if (upperCode === "SUPERADMIN") {
-          metadata = { visibleTo: [] };
-        } else {
-          metadata = { visibleTo: [] };
+    async create(data: Partial<IHierarchyItem>) {
+        try {
+          if (!data.code || !data.type || !data.name) {
+            throw new Error("Missing required fields: 'type', 'code', or 'name'");
+          }
+    
+          // Check if code already exists for the type
+          const exists = await HierarchyItem.findOne({
+            where: { type: data.type, code: data.code },
+          });
+          if (exists)
+            throw new Error(
+              `Code '${data.code}' already exists for type '${data.type}'`
+            );
+    
+          let metadata = {};
+          if (data.type.includes("role")) {
+            if (data.code === "staff") {
+              metadata = { visibleTo: ["admin", "superadmin"] };
+            } else if (data.code === "admin") {
+              metadata = { visibleTo: ["superadmin"] };
+            } else if (data.code === "superadmin") {
+              metadata = { visibleTo: [] };
+            } else {
+              metadata = { visibleTo: [] };
+            }
+          }
+    
+          const payload = {
+            type: data.type,
+            code: data.code,
+            name: data.name,
+            description: data.description,
+            parent_id: data.parent_id,
+            metadata,
+            is_active: data.is_active !== false,
+          };
+    
+          return await HierarchyItem.create(payload as any);
+        } catch (error: any) {
+          throw new Error(error.message || "Failed to create common detail");
         }
       }
-
-      const payload = {
-        type: upperType,
-        code: upperCode,
-        name: data.name,
-        description: data.description,
-        parent_id: data.parent_id,
-        metadata,
-        is_active: data.is_active !== false,
-      };
-
-      return await HierarchyItem.create(payload as any);
-    } catch (error: any) {
-      throw new Error(error.message || "Failed to create common detail");
-    }
-  }
-
   async getAll() {
     try {
       return await HierarchyItem.findAll({
@@ -79,8 +75,8 @@ export class CommonService {
     try {
       const count = await HierarchyItem.destroy({
         where: {
-          type: type.toUpperCase(),
-          code: code.toUpperCase(),
+          type: type.toLowerCase(),
+          code: code.toLowerCase(),
         },
       });
       return count > 0;

@@ -11,6 +11,7 @@ import { Otp } from "../models/otp.model";
 import { CommonService } from "../services/common.service";
 import generator from "generate-password";
 import { HierarchyItem } from "../models/common.model";
+import { Sequelize } from "sequelize";
 
 const commonService = new CommonService();
 
@@ -752,21 +753,21 @@ export class UserController {
         });
       }
 
-      const upperCode = code.toUpperCase();
+      const upperCode = code.toLowerCase();
       let metadata = {};
 
-      if (type.toUpperCase() === "ROLE") {
-        if (upperCode === "STAFF") {
-          metadata = { visibleTo: ["ADMIN", "SUPERADMIN"] };
-        } else if (upperCode === "ADMIN") {
-          metadata = { visibleTo: ["SUPERADMIN"] };
-        } else if (upperCode === "SUPERADMIN") {
+      if (type.toLowerCase() === "role") {
+        if (upperCode === "staff") {
+          metadata = { visibleTo: ["admin", "superadmin"] };
+        } else if (upperCode === "admin") {
+          metadata = { visibleTo: ["superadmin"] };
+        } else if (upperCode === "superadmin") {
           metadata = { visibleTo: [] };
         }
       }
 
       const data = await commonService.create({
-        type: type.toUpperCase(),
+        type: type.toLowerCase(),
         code: upperCode,
         name,
         description,
@@ -802,7 +803,7 @@ export class UserController {
       }
 
       const roles = await HierarchyItem.findAll({
-        where: { type: typeDataRaw.toUpperCase(), is_active: true },
+        where: { type: typeDataRaw.toLowerCase(), is_active: true },
         attributes: ["code", "metadata"],
       });
 
@@ -887,6 +888,48 @@ export class UserController {
         });
       }
 
+      if (phone) {
+        const phoneExits = await User.findOne({
+          where: Sequelize.where(
+            Sequelize.literal(`contact_info->>'phone'`),
+            phone
+          ),
+        });
+        if (phoneExits) {
+          return res.status(409).json({
+            success: false,
+            error: `Phone number '${phone}' is already registered`,
+          });
+        }
+      }
+
+      if (email) {
+        const emailExits = await User.findOne({
+          where: Sequelize.where(
+            Sequelize.literal(`contact_info->>'email'`),
+            email
+          ),
+        });
+        if (emailExits) {
+          return res.status(409).json({
+            success: false,
+            error: `Email '${email}' is already registered`,
+          });
+        }
+      }
+
+      if (name) {
+        const usernameExists = await User.findOne({
+          where: { username: name },
+        });
+        if (usernameExists) {
+          return res.status(409).json({
+            success: false,
+            error: `Username '${name}' is already taken`,
+          });
+        }
+      }
+
       // Validate role
       const isValid = await User.isValidRole(role);
       if (!isValid) {
@@ -901,13 +944,15 @@ export class UserController {
         numbers: true,
       });
 
+      const hashedPassword = await bcrypt.hash(password, 10);
+
       const user = await User.create({
         user_id: uuidv4(),
         username: name,
         name,
-        role,
+        role: role.toLowerCase(),
         utility_id: utility_id,
-        password: password,
+        password: hashedPassword,
         login_url: "",
         status: "INACTIVE",
         contact_info: {
@@ -921,11 +966,12 @@ export class UserController {
         message: "User created successfully.",
         user: {
           username: user.username,
-          password: user.password,
+          password: password,
           role: user.role,
         },
       });
     } catch (error) {
+      console.log(error);
       res.status(500).json({
         success: false,
         error: "Internal server error. Please try again later",
