@@ -1,5 +1,5 @@
 import { v4 as uuidv4, validate as isUUID } from 'uuid';
-import Utility from 'src/models/utility.model';
+import Utility from '../models/utility.model';
 import {UtilityAttributes} from '../models/utility.model'
 
 class UtilityService {
