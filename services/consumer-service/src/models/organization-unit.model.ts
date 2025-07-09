@@ -39,6 +39,7 @@ OrganizationUnit.init(
         model: Utility,
         key: 'utilityId',
       },
+      onDelete: 'CASCADE',
     },
     name: {
       type: DataTypes.STRING(255),

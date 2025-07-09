@@ -109,6 +109,7 @@ AttributeTemplate.init(
         model: Utility,
         key: 'utilityId',
       },
+      onDelete: 'CASCADE',
     },
   },
   {

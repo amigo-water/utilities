@@ -2,7 +2,7 @@ import { DataTypes } from 'sequelize';
 import sequelize from '../config/database';
 import { BaseModel, BaseAttributes } from './base.model';
 
-interface UtilityAttributes extends BaseAttributes {
+export interface UtilityAttributes extends BaseAttributes {
   utilityId: string;
   utilityName: string;
   utilityCode: string;

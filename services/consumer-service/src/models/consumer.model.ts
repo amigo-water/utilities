@@ -49,6 +49,7 @@ Consumer.init(
         model: Utility,
         key: 'utilityId',
       },
+      onDelete: 'CASCADE',
     },
     consumerNumber: {
       type: DataTypes.STRING(50),

@@ -44,9 +44,8 @@ class FormBuilderService {
       });
 
       return template;
-    } catch (error) {
-      console.error('Error in createAttributeTemplate:', error);
-      throw new Error('Failed to create attribute template');
+    } catch (error:any) {
+      throw new Error(error.message || 'Failed to create attribute template');
     }
   }
 
@@ -57,6 +56,10 @@ class FormBuilderService {
   } = {}): Promise<AttributeTemplate[]> {
     try {
       const where: any = { utilityId };
+
+      if (!utilityId) {
+        throw new Error('Utility ID is required');
+      }
 
       if (filters.applicableTo) {
         where.applicableTo = filters.applicableTo;
@@ -69,19 +72,8 @@ class FormBuilderService {
       }
 
       return await AttributeTemplate.findAll({ where });
-    } catch (error) {
-      console.error('Error in getAttributeTemplates:', error);
-      throw new Error('Failed to fetch attribute templates');
-    }
-  }
-
-  // Get attribute template by ID
-  async getAttributeTemplateById(templateId: string): Promise<AttributeTemplate | null> {
-    try {
-      return await AttributeTemplate.findByPk(templateId);
-    } catch (error) {
-      console.error('Error in getAttributeTemplateById:', error);
-      throw new Error('Failed to fetch attribute template');
+    } catch (error:any) {
+      throw new Error(error.message || 'Failed to fetch attribute templates');
     }
   }
 
@@ -120,9 +112,8 @@ class FormBuilderService {
         where: { templateId },
         returning: true,
       });
-    } catch (error) {
-      console.error('Error in updateAttributeTemplate:', error);
-      throw error;
+    } catch (error:any) {
+      throw new Error(error.message || 'Failed to update attribute template');
     }
   }
 
@@ -141,9 +132,8 @@ class FormBuilderService {
       return await AttributeTemplate.destroy({
         where: { templateId },
       });
-    } catch (error) {
-      console.error('Error in deleteAttributeTemplate:', error);
-      throw error;
+    } catch (error:any) {
+      throw new Error(error.message || 'Failed to delete attribute template');
     }
   }
 
@@ -187,9 +177,8 @@ class FormBuilderService {
       });
 
       return { fields };
-    } catch (error) {
-      console.error('Error in generateFormSchema:', error);
-      throw new Error('Failed to generate form schema');
+    } catch (error:any) {
+      throw new Error(error.message || 'Failed to generate form schema');
     }
   }
 }

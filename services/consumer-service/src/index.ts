@@ -7,6 +7,8 @@ import attributeTemplateRoutes from "./routes/attribute-template.routes";
 import consumerQueryRoutes from "./routes/consumer-query.routes";
 import consumerSearchRoutes from "./routes/consumer-search.routes";
 import { EventHandlerService } from "./services/event-handler.service";
+import formBuilderRoutes from "./routes/form-builder.routes";
+import utilityRoutes from "./routes/utility.routes";
 
 // Load environment variables
 dotenv.config();
@@ -22,6 +24,8 @@ app.use(express.json());
 app.use("/api/attribute-templates", attributeTemplateRoutes);
 app.use("/api/consumers", consumerQueryRoutes);
 app.use("/api/consumers", consumerSearchRoutes);
+app.use("/api/utilities", utilityRoutes);
+app.use("/api/forms", formBuilderRoutes);
 
 // Error handling middleware
 app.use(
