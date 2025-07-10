@@ -33,6 +33,8 @@ FormAttribute.init(
     formAttributeId: {
       type: DataTypes.UUID,
       primaryKey: true,
+      unique: true,
+      allowNull: false,
       defaultValue: DataTypes.UUIDV4,
     },
     formId: {
@@ -73,7 +75,7 @@ FormAttribute.init(
     sequelize,
     tableName: 'form_attributes',
     timestamps: true,
-    underscored: true,
+    paranoid: true,
   }
 );
 
