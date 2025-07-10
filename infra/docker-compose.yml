@@ -79,6 +79,7 @@ services:
       PORT: 3000
       DATABASE_URL: postgres://postgres:root@postgres:5432/analytics-reporting
       NODE_ENV: development
+      JWT_SECRET: "1cc06f721e01d4e6f89af72e09681968a85798dd016e8817149f1564dee40018d0ee65a090162a309ae20e8dae1c4cafebcfcd11878cec9e8d022d7f9ed0ead9"
     depends_on:
       postgres:
         condition: service_healthy
@@ -109,6 +110,7 @@ services:
       KAFKA_GROUP_ID: billing-service-group
       KAFKA_CLIENT_ID: billing-service
       KAFKA_CLIENT_SECRET: billing-service
+      JWT_SECRET: "1cc06f721e01d4e6f89af72e09681968a85798dd016e8817149f1564dee40018d0ee65a090162a309ae20e8dae1c4cafebcfcd11878cec9e8d022d7f9ed0ead9"
     depends_on:
       postgres:
         condition: service_healthy
@@ -126,6 +128,7 @@ services:
       PORT: 3002
       DATABASE_URL: postgres://postgres:root@postgres:5432/collection-management
       NODE_ENV: development
+      JWT_SECRET: "1cc06f721e01d4e6f89af72e09681968a85798dd016e8817149f1564dee40018d0ee65a090162a309ae20e8dae1c4cafebcfcd11878cec9e8d022d7f9ed0ead9"
     depends_on:
       postgres:
         condition: service_healthy
@@ -155,6 +158,7 @@ services:
       DB_POOL_MIN: 0
       DB_POOL_ACQUIRE: 30000
       DB_POOL_IDLE: 10000
+      JWT_SECRET: "1cc06f721e01d4e6f89af72e09681968a85798dd016e8817149f1564dee40018d0ee65a090162a309ae20e8dae1c4cafebcfcd11878cec9e8d022d7f9ed0ead9"
 
       KAFKA_BROKER: kafka:9092
     depends_on:
@@ -174,6 +178,7 @@ services:
       PORT: 3004
       DATABASE_URL: postgres://postgres:root@postgres:5432/complaint-grievance-management
       NODE_ENV: development
+      JWT_SECRET: "1cc06f721e01d4e6f89af72e09681968a85798dd016e8817149f1564dee40018d0ee65a090162a309ae20e8dae1c4cafebcfcd11878cec9e8d022d7f9ed0ead9"
     depends_on:
       postgres:
         condition: service_healthy
@@ -191,6 +196,7 @@ services:
       PORT: 3005
       DATABASE_URL: postgres://postgres:root@postgres:5432/gis-location-management
       NODE_ENV: development
+      JWT_SECRET: "1cc06f721e01d4e6f89af72e09681968a85798dd016e8817149f1564dee40018d0ee65a090162a309ae20e8dae1c4cafebcfcd11878cec9e8d022d7f9ed0ead9"
     depends_on:
       postgres:
         condition: service_healthy
@@ -208,6 +214,7 @@ services:
       PORT: 3006
       DATABASE_URL: postgres://postgres:root@postgres:5432/meter-management-inventory
       NODE_ENV: development
+      JWT_SECRET: "1cc06f721e01d4e6f89af72e09681968a85798dd016e8817149f1564dee40018d0ee65a090162a309ae20e8dae1c4cafebcfcd11878cec9e8d022d7f9ed0ead9"
     depends_on:
       postgres:
         condition: service_healthy
@@ -225,7 +232,7 @@ services:
       PORT: 3007
       DATABASE_URL: postgres://postgres:root@postgres:5432/notification-communication
       NODE_ENV: development
-
+      JWT_SECRET: "1cc06f721e01d4e6f89af72e09681968a85798dd016e8817149f1564dee40018d0ee65a090162a309ae20e8dae1c4cafebcfcd11878cec9e8d022d7f9ed0ead9"
       KAFKA_BROKERS: kafka:9092
       KAFKA_GROUP_ID: notification-communication-group
       KAFKA_CLIENT_ID: notification-communication-service
@@ -247,6 +254,7 @@ services:
       PORT: 3008
       DATABASE_URL: postgres://postgres:root@postgres:5432/Policies
       NODE_ENV: development
+      JWT_SECRET: "1cc06f721e01d4e6f89af72e09681968a85798dd016e8817149f1564dee40018d0ee65a090162a309ae20e8dae1c4cafebcfcd11878cec9e8d022d7f9ed0ead9"
     depends_on:
       postgres:
         condition: service_healthy
@@ -264,6 +272,7 @@ services:
       PORT: 3009
       DATABASE_URL: postgres://postgres:root@postgres:5432/third-party-integration-gateway
       NODE_ENV: development
+      JWT_SECRET: "1cc06f721e01d4e6f89af72e09681968a85798dd016e8817149f1564dee40018d0ee65a090162a309ae20e8dae1c4cafebcfcd11878cec9e8d022d7f9ed0ead9"
     depends_on:
       postgres:
         condition: service_healthy
@@ -282,6 +291,7 @@ services:
       PORT: 3010
       DATABASE_URL: postgres://postgres:root@postgres:5432/user-identity-access-management
       NODE_ENV: development
+      JWT_SECRET: "1cc06f721e01d4e6f89af72e09681968a85798dd016e8817149f1564dee40018d0ee65a090162a309ae20e8dae1c4cafebcfcd11878cec9e8d022d7f9ed0ead9"
     depends_on:
       postgres:
         condition: service_healthy
@@ -345,6 +355,7 @@ services:
       PORT: 3012
       DATABASE_URL: postgres://postgres:root@postgres:5432/workflow-approval
       NODE_ENV: development
+      JWT_SECRET: "1cc06f721e01d4e6f89af72e09681968a85798dd016e8817149f1564dee40018d0ee65a090162a309ae20e8dae1c4cafebcfcd11878cec9e8d022d7f9ed0ead9"
     depends_on:
       postgres:
         condition: service_healthy
