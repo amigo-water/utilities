@@ -27,6 +27,8 @@ FormTemplate.init(
     formId: {
       type: DataTypes.UUID,
       primaryKey: true,
+      unique: true,
+      allowNull: false,
       defaultValue: DataTypes.UUIDV4,
     },
     formName: {
@@ -51,7 +53,7 @@ FormTemplate.init(
     sequelize,
     tableName: 'form_templates',
     timestamps: true,
-    underscored: true,
+    paranoid: true,
   }
 );
 
